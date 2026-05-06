@@ -1,0 +1,15 @@
+build/
+install/
+log/
+
+.vscode/
+.cursor/
+.windsurf/
+
+.env
+*.pyc
+__pycache__/
+*.bag
+*.db3
+*.sqlite3
+.DS_Store
