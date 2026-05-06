@@ -135,14 +135,3 @@ HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose run --rm navegacion_deteccion
 El servicio `navegacion_deteccion_senales` de `tools/docker-compose.yaml` monta el workspace, activa `/opt/autoware/setup.bash`, activa `install/setup.bash` y ejecuta `ros2 launch navegacion_deteccion_senales run.launch.py`.
 
 El nodo se suscribe a la cámara de AWSIM en `/sensing/camera/traffic_light/image_raw`, publica comandos de control en `/control/command/control_cmd` y genera una imagen de depuración en `~/debug_image`.
-
-## Estado del software
-
-El paquete incluye una primera versión funcional del nodo `lane_follower.py`:
-
-- Detecta líneas de carril mediante Canny y Hough probabilística.
-- Calcula una consigna de giro proporcional al error entre el centro de carril estimado y el centro de la imagen.
-- Permite cargar opcionalmente un modelo Keras para clasificación de señales.
-- Ajusta la velocidad objetivo si la clase reconocida coincide con una señal de límite de velocidad configurada.
-
-El entrenamiento de la CNN y la integración fina de datasets de señales quedan como líneas de trabajo del proyecto.
