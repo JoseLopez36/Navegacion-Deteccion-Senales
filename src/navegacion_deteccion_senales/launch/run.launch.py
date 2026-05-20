@@ -15,6 +15,13 @@ def generate_launch_description():
     return LaunchDescription([
         Node(
             package=package_name,
+            executable='vehicle_control_node.py',
+            name='vehicle_control_node',
+            output='screen',
+            parameters=[params_file],
+        ),
+        Node(
+            package=package_name,
             executable='lane_detection_node.py',
             name='lane_detection_node',
             output='screen',
@@ -29,16 +36,9 @@ def generate_launch_description():
         ),
         Node(
             package=package_name,
-            executable='vehicle_control_node.py',
-            name='vehicle_control_node',
-            output='screen',
-            parameters=[params_file],
-        ),
-        Node(
-            package=package_name,
             executable='annotation_generator_node.py',
             name='annotation_generator_node',
             output='screen',
             parameters=[params_file],
-        ),
+        )
     ])

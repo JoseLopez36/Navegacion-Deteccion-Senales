@@ -16,7 +16,6 @@ class VehicleControlNode(Node):
       - /lane_detection/lane_error          (std_msgs/Float32)              — error lateral en píxeles
       - /sign_detection/speed_limit         (std_msgs/Float32)              — límite de velocidad (m/s), -1 si no aplica
       - /carla/ego_vehicle/speedometer      (std_msgs/Float32)
-      - /carla/ego_vehicle/vehicle_status   (carla_msgs/CarlaEgoVehicleStatus)
 
     Publicaciones:
       - /carla/ego_vehicle/vehicle_control_cmd (carla_msgs/CarlaEgoVehicleControl)
@@ -34,7 +33,6 @@ class VehicleControlNode(Node):
         self.declare_parameter('lane_error_topic', '/lane_detection/lane_error')
         self.declare_parameter('speed_limit_topic', '/sign_detection/speed_limit')
         self.declare_parameter('speedometer_topic', '/carla/ego_vehicle/speedometer')
-        self.declare_parameter('vehicle_status_topic', '/carla/ego_vehicle/vehicle_status')
         self.declare_parameter('vehicle_control_topic', '/carla/ego_vehicle/vehicle_control_cmd')
 
         self.control_rate         = float(self.get_parameter('control_rate').value)
@@ -45,7 +43,6 @@ class VehicleControlNode(Node):
         self.lane_error_topic     = self.get_parameter('lane_error_topic').value
         self.speed_limit_topic   = self.get_parameter('speed_limit_topic').value
         self.speedometer_topic    = self.get_parameter('speedometer_topic').value
-        self.vehicle_status_topic = self.get_parameter('vehicle_status_topic').value
         self.vehicle_control_topic = self.get_parameter('vehicle_control_topic').value
 
         # --- QoS ---
@@ -95,12 +92,6 @@ class VehicleControlNode(Node):
             self._on_speedometer,
             sensor_qos,
         )
-        self.create_subscription(
-            CarlaEgoVehicleStatus,
-            self.vehicle_status_topic,
-            self._on_vehicle_status,
-            sensor_qos,
-        )
 
         # --- Timer de control ---
         self.create_timer(1.0 / self.control_rate, self._control_loop)
@@ -123,34 +114,31 @@ class VehicleControlNode(Node):
     def _on_speedometer(self, msg: Float32):
         self.current_speed = msg.data
 
-    def _on_vehicle_status(self, msg: CarlaEgoVehicleStatus):
-        # TODO: actualizar estado adicional del vehículo (velocidad real, etc.) si fuera necesario
-        pass
-
     # ------------------------------------------------------------------
     # Bucle de control
     # ------------------------------------------------------------------
 
     def _control_loop(self):
-        cmd = CarlaEgoVehicleControl()
-        cmd.hand_brake = False
-        cmd.reverse    = False
-        cmd.manual_gear_shift = False
+        # Control de crucero
+        speed_error = self.speed_limit - self.current_speed
+        throttle = float(max(0.0, min(1.0, self.kp_throttle * speed_error)))
+        brake = 0.0
 
-        # TODO: implementar controlador completo (PID lateral + longitudinal)
-        # Placeholder proporcional básico
+        # Control de dirección
         steering = float(
             max(-self.max_steering_angle,
                 min(self.max_steering_angle,
                     -self.kp_steering * self.lane_error))
         )
-        speed_error = self.speed_limit - self.current_speed
-        throttle = float(max(0.0, min(1.0, self.kp_throttle * speed_error)))
-        brake    = 1.0 if self.brake_active else 0.0
 
-        cmd.steer    = steering
+        # Aplicar control
+        cmd = CarlaEgoVehicleControl()
+        cmd.hand_brake = False
+        cmd.reverse = False
+        cmd.manual_gear_shift = False
         cmd.throttle = throttle
-        cmd.brake    = brake
+        cmd.brake = brake
+        cmd.steer = steering
 
         self.control_pub.publish(cmd)
 
