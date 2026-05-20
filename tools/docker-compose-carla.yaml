@@ -14,8 +14,11 @@ services:
       - CARLA_HOST=${CARLA_HOST:-localhost}
       - CARLA_PORT=${CARLA_PORT:-2001}
       - CARLA_TOWN=${CARLA_TOWN:-Town05}
+      - FASTRTPS_DEFAULT_PROFILES_FILE=/fastdds_profile.xml
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./fastdds_profile.xml:/fastdds_profile.xml:ro
     devices:
       - /dev/dri:/dev/dri
     deploy:
@@ -35,7 +38,8 @@ services:
           host:=${CARLA_HOST:-localhost} \
           port:=${CARLA_PORT:-2001} \
           timeout:=10 \
-          town:=${CARLA_TOWN:-Town05}
+          town:=${CARLA_TOWN:-Town05} \
+          2>&1 | grep -v '\[INFO\]' | grep -v '\[WARN\]'
 
   # ── Navegación + detección de señales ────────────────────────────────────────
   navegacion:
@@ -50,9 +54,12 @@ services:
     environment:
       - DISPLAY=${DISPLAY}
       - XDG_RUNTIME_DIR=/tmp/runtime-ros
+      - FASTRTPS_DEFAULT_PROFILES_FILE=/fastdds_profile.xml
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ../src/navegacion_deteccion_senales:/home/ros/workspace/src/navegacion_deteccion_senales:rw
+      - ./fastdds_profile.xml:/fastdds_profile.xml:ro
     devices:
       - /dev/dri:/dev/dri
     deploy:
@@ -82,10 +89,16 @@ services:
     tty: true
     depends_on:
       - ros_bridge
+    environment:
+      - FASTRTPS_DEFAULT_PROFILES_FILE=/fastdds_profile.xml
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+    volumes:
+      - ./fastdds_profile.xml:/fastdds_profile.xml:ro
     command:
       - bash
       - -c
       - |
         source /opt/ros/humble/setup.bash
         source /home/ros/workspace/install/setup.bash
-        ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765
+        ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 \
+          2>&1 | grep -v '\[INFO\]' | grep -v '\[WARN\]'

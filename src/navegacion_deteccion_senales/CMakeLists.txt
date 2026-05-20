@@ -9,7 +9,11 @@ install(
 )
 
 install(
-  PROGRAMS scripts/lane_follower.py
+  PROGRAMS
+    scripts/lane_detection_node.py
+    scripts/sign_detection_node.py
+    scripts/vehicle_control_node.py
+    scripts/annotation_generator_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

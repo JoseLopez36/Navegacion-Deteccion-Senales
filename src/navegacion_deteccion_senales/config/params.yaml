@@ -1,0 +1,48 @@
+vehicle_control_node:
+  ros__parameters:
+    control_rate: 20.0 # Hz
+    target_speed: 5.0 # m/s (~18 km/h)
+    max_steering_angle: 0.5 # rad
+    kp_steering: 0.005 # proporcional al error lateral en píxeles
+    kp_throttle: 0.3
+    lane_error_topic: /lane_detection/lane_error
+    speed_limit_topic: /sign_detection/speed_limit
+    speedometer_topic: /carla/ego_vehicle/speedometer
+    vehicle_status_topic: /carla/ego_vehicle/vehicle_status
+    vehicle_control_topic: /carla/ego_vehicle/vehicle_control_cmd
+
+lane_detection_node:
+  ros__parameters:
+    image_topic: /carla/ego_vehicle/rgb_front/image
+    lane_error_topic: /lane_detection/lane_error
+    debug_image_topic: /lane_detection/debug_image
+    publish_debug_image: true
+    roi_top_ratio: 0.55
+    canny_low: 50
+    canny_high: 150
+    hough_threshold: 50
+    hough_min_line_length: 40
+    hough_max_line_gap: 20
+
+sign_detection_node:
+  ros__parameters:
+    image_topic: /carla/ego_vehicle/rgb_front/image
+    sign_label_topic: /sign_detection/sign_label
+    speed_limit_topic: /sign_detection/speed_limit
+    debug_image_topic: /sign_detection/debug_image
+    publish_debug_image: true
+    model_path: '' # ruta al fichero .pth del modelo CNN
+    confidence_threshold: 0.7
+    input_width: 32
+    input_height: 32
+    num_classes: 43 # clases GTSRB
+
+annotation_generator_node:
+  ros__parameters:
+    image_topic: /carla/ego_vehicle/rgb_front/image
+    lane_error_topic: /lane_detection/lane_error
+    sign_label_topic: /sign_detection/sign_label
+    speed_limit_topic: /sign_detection/speed_limit
+    annotations_topic: /foxglove/annotations
+    image_width: 800
+    image_height: 600
