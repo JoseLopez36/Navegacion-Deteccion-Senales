@@ -112,3 +112,24 @@ docker exec -it foxglove_bridge bash
 ### Visualización con Foxglove Studio
 
 Foxglove Studio es una alternativa a rviz2 que corre en el **host** (o en el navegador) y se conecta al contenedor sin necesidad de reenvío X11.
+
+#### Conexión
+
+1. Abre [Foxglove Studio](https://studio.foxglove.dev) en el navegador o la app de escritorio.
+2. Selecciona **Open connection → Foxglove WebSocket**.
+3. Introduce la URL:
+   ```
+   ws://172.17.0.1:8765
+   ```
+   > `172.17.0.1` es la IP del host desde dentro de la red Docker bridge. El puerto `8765` es el que expone el servicio `foxglove_bridge` del compose.
+
+#### Importar layout
+
+Para cargar el layout predefinido con las dos cámaras (`rgb_view` y `rgb_front`):
+
+1. En Foxglove Studio, ve a **View → Import layout from file** (o el icono de layout en la barra lateral).
+2. Selecciona el fichero `tools/foxglove.json` de este repositorio.
+
+El layout carga dos paneles de imagen:
+- **Izquierda**: `/carla/ego_vehicle/rgb_view/image` — vista exterior del vehículo
+- **Derecha**: `/carla/ego_vehicle/rgb_front/image` — cámara frontal (detección de señales)

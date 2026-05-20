@@ -13,7 +13,7 @@ services:
       - XDG_RUNTIME_DIR=/tmp/runtime-ros
       - CARLA_HOST=${CARLA_HOST:-localhost}
       - CARLA_PORT=${CARLA_PORT:-2001}
-      - CARLA_TOWN=${CARLA_TOWN:-Town05}
+      - CARLA_TOWN=${CARLA_TOWN:-Town02}
       - FASTRTPS_DEFAULT_PROFILES_FILE=/fastdds_profile.xml
       - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
     volumes:
@@ -37,8 +37,8 @@ services:
         ros2 launch carla_ros_bridge carla_ros_bridge_with_example_ego_vehicle.launch.py \
           host:=${CARLA_HOST:-localhost} \
           port:=${CARLA_PORT:-2001} \
-          timeout:=10 \
-          town:=${CARLA_TOWN:-Town05} \
+          timeout:=100 \
+          town:=${CARLA_TOWN:-Town02} \
           2>&1 | grep -v '\[INFO\]' | grep -v '\[WARN\]'
 
   # ── Navegación + detección de señales ────────────────────────────────────────

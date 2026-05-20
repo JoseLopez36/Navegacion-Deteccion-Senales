@@ -1,7 +1,6 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
+from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -13,27 +12,33 @@ def generate_launch_description():
         'params.yaml',
     ])
 
-    log_level_arg = DeclareLaunchArgument(
-        'log_level',
-        default_value='error',
-        description='Logging level for all nodes (debug, info, warn, error, fatal)',
-    )
-    log_level = LaunchConfiguration('log_level')
-
-    def make_node(executable, name):
-        return Node(
+    return LaunchDescription([
+        Node(
             package=package_name,
-            executable=executable,
-            name=name,
+            executable='lane_detection_node.py',
+            name='lane_detection_node',
             output='screen',
             parameters=[params_file],
-            arguments=['--ros-args', '--log-level', log_level],
-        )
-
-    return LaunchDescription([
-        log_level_arg,
-        make_node('lane_detection_node.py',      'lane_detection_node'),
-        make_node('sign_detection_node.py',      'sign_detection_node'),
-        make_node('vehicle_control_node.py',     'vehicle_control_node'),
-        make_node('annotation_generator_node.py','annotation_generator_node'),
+        ),
+        Node(
+            package=package_name,
+            executable='sign_detection_node.py',
+            name='sign_detection_node',
+            output='screen',
+            parameters=[params_file],
+        ),
+        Node(
+            package=package_name,
+            executable='vehicle_control_node.py',
+            name='vehicle_control_node',
+            output='screen',
+            parameters=[params_file],
+        ),
+        Node(
+            package=package_name,
+            executable='annotation_generator_node.py',
+            name='annotation_generator_node',
+            output='screen',
+            parameters=[params_file],
+        ),
     ])
