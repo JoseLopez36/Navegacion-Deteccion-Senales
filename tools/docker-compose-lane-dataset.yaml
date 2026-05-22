@@ -14,6 +14,7 @@ services:
       - CARLA_HOST=${CARLA_HOST:-localhost}
       - CARLA_PORT=${CARLA_PORT:-2001}
       - CARLA_TOWN=${CARLA_TOWN:-Town02}
+      - CARLA_SPAWN_POINT=${CARLA_SPAWN_POINT:-none}
       - FASTRTPS_DEFAULT_PROFILES_FILE=/fastdds_profile.xml
       - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
     volumes:
@@ -39,6 +40,7 @@ services:
           port:=${CARLA_PORT:-2001} \
           timeout:=100 \
           town:=${CARLA_TOWN:-Town02} \
+          spawn_point_ego_vehicle:=${CARLA_SPAWN_POINT:-none} \
           2>&1 | grep -v '\[INFO\]' | grep -v '\[WARN\]'
 
   # ── Recolección de dataset de carriles ─────────────────────────────────────
