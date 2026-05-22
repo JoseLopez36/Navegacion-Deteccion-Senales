@@ -30,3 +30,24 @@ annotation_generator_node:
     annotations_topic: /foxglove/annotations
     image_width: 800
     image_height: 600
+
+sign_dataset_node:
+  ros__parameters:
+    image_topic: /carla/ego_vehicle/rgb_front/image
+    semantic_topic: /carla/ego_vehicle/semantic_segmentation_front/image
+    rgb_camera_info_topic: /carla/ego_vehicle/rgb_front/camera_info
+    semantic_camera_info_topic: /carla/ego_vehicle/semantic_segmentation_front/camera_info
+    output_dir: /home/ros/workspace/src/navegacion_deteccion_senales/dataset
+    capture_rate: 5.0
+    min_sign_area: 200
+    max_sign_area: 50000
+
+lane_dataset_node:
+  ros__parameters:
+    image_topic: /carla/ego_vehicle/rgb_front/image
+    semantic_topic: /carla/ego_vehicle/semantic_segmentation_front/image
+    rgb_camera_info_topic: /carla/ego_vehicle/rgb_front/camera_info
+    semantic_camera_info_topic: /carla/ego_vehicle/semantic_segmentation_front/camera_info
+    output_dir: /home/ros/workspace/src/navegacion_deteccion_senales/lane_dataset
+    capture_rate: 5.0
+    min_lane_area: 100

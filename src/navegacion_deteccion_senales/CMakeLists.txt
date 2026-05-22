@@ -14,6 +14,8 @@ install(
     scripts/lane_detection_node.py
     scripts/sign_detection_node.py
     scripts/annotation_generator_node.py
+    scripts/sign_dataset_node.py
+    scripts/lane_dataset_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -2,7 +2,7 @@ services:
 
   # ── CARLA → ROS2 bridge ────────────────────────────────────────────────────
   ros_bridge:
-    image: ros2-carla:humble
+    image: navegacion_deteccion_senales
     container_name: carla_ros_bridge
     network_mode: host
     stdin_open: true
@@ -41,10 +41,10 @@ services:
           town:=${CARLA_TOWN:-Town02} \
           2>&1 | grep -v '\[INFO\]' | grep -v '\[WARN\]'
 
-  # ── Navegación + detección de señales ────────────────────────────────────────
-  navegacion:
-    image: ros2-carla:humble
-    container_name: navegacion_deteccion_senales
+  # ── Recolección de dataset de carriles ─────────────────────────────────────
+  lane_dataset:
+    image: navegacion_deteccion_senales
+    container_name: lane_dataset_collector
     network_mode: host
     stdin_open: true
     tty: true
@@ -59,6 +59,7 @@ services:
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ../src/navegacion_deteccion_senales:/home/ros/workspace/src/navegacion_deteccion_senales:rw
+      - ../dataset/lanes:/home/ros/workspace/src/navegacion_deteccion_senales/lane_dataset:rw
       - ./fastdds_profile.xml:/fastdds_profile.xml:ro
     devices:
       - /dev/dri:/dev/dri
@@ -77,12 +78,12 @@ services:
         cd /home/ros/workspace
         colcon build --symlink-install --packages-select navegacion_deteccion_senales
         source install/setup.bash
-        ros2 launch navegacion_deteccion_senales run.launch.py
+        ros2 launch navegacion_deteccion_senales lane_dataset.launch.py
         exec bash
 
   # ── Foxglove WebSocket bridge ─────────────────────────────────────────────
   foxglove:
-    image: ros2-carla:humble
+    image: navegacion_deteccion_senales
     container_name: foxglove_bridge
     network_mode: host
     stdin_open: true

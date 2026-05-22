@@ -1,0 +1,105 @@
+services:
+
+  # ── CARLA → ROS2 bridge ────────────────────────────────────────────────────
+  ros_bridge:
+    image: navegacion_deteccion_senales
+    container_name: carla_ros_bridge
+    network_mode: host
+    stdin_open: true
+    tty: true
+    privileged: true
+    environment:
+      - DISPLAY=${DISPLAY}
+      - XDG_RUNTIME_DIR=/tmp/runtime-ros
+      - CARLA_HOST=${CARLA_HOST:-localhost}
+      - CARLA_PORT=${CARLA_PORT:-2001}
+      - CARLA_TOWN=${CARLA_TOWN:-Town02}
+      - FASTRTPS_DEFAULT_PROFILES_FILE=/fastdds_profile.xml
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./fastdds_profile.xml:/fastdds_profile.xml:ro
+    devices:
+      - /dev/dri:/dev/dri
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command:
+      - bash
+      - -c
+      - |
+        source /opt/ros/humble/setup.bash
+        source /home/ros/workspace/install/setup.bash
+        ros2 launch carla_ros_bridge carla_ros_bridge_with_example_ego_vehicle.launch.py \
+          host:=${CARLA_HOST:-localhost} \
+          port:=${CARLA_PORT:-2001} \
+          timeout:=100 \
+          town:=${CARLA_TOWN:-Town02} \
+          2>&1 | grep -v '\[INFO\]' | grep -v '\[WARN\]'
+
+  # ── Recolección de dataset de señales ──────────────────────────────────────
+  sign_dataset:
+    image: navegacion_deteccion_senales
+    container_name: sign_dataset_collector
+    network_mode: host
+    stdin_open: true
+    tty: true
+    privileged: true
+    depends_on:
+      - ros_bridge
+    environment:
+      - DISPLAY=${DISPLAY}
+      - XDG_RUNTIME_DIR=/tmp/runtime-ros
+      - FASTRTPS_DEFAULT_PROFILES_FILE=/fastdds_profile.xml
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ../src/navegacion_deteccion_senales:/home/ros/workspace/src/navegacion_deteccion_senales:rw
+      - ../dataset/signs:/home/ros/workspace/src/navegacion_deteccion_senales/dataset:rw
+      - ./fastdds_profile.xml:/fastdds_profile.xml:ro
+    devices:
+      - /dev/dri:/dev/dri
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command:
+      - bash
+      - -c
+      - |
+        source /opt/ros/humble/setup.bash
+        cd /home/ros/workspace
+        colcon build --symlink-install --packages-select navegacion_deteccion_senales
+        source install/setup.bash
+        ros2 launch navegacion_deteccion_senales sign_dataset.launch.py
+        exec bash
+
+  # ── Foxglove WebSocket bridge ─────────────────────────────────────────────
+  foxglove:
+    image: navegacion_deteccion_senales
+    container_name: foxglove_bridge
+    network_mode: host
+    stdin_open: true
+    tty: true
+    depends_on:
+      - ros_bridge
+    environment:
+      - FASTRTPS_DEFAULT_PROFILES_FILE=/fastdds_profile.xml
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+    volumes:
+      - ./fastdds_profile.xml:/fastdds_profile.xml:ro
+    command:
+      - bash
+      - -c
+      - |
+        source /opt/ros/humble/setup.bash
+        source /home/ros/workspace/install/setup.bash
+        ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 \
+          2>&1 | grep -v '\[INFO\]' | grep -v '\[WARN\]'

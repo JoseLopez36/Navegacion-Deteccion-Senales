@@ -72,7 +72,7 @@ Más info: [Guía de instalación de CARLA con Docker](https://medium.com/aimonk
 Desde la raíz del repositorio:
 
 ```bash
-docker build -t ros2-carla:humble docker/
+docker build -t navegacion_deteccion_senales docker/
 ```
 
 ### Lanzar con Docker Compose
@@ -80,7 +80,8 @@ docker build -t ros2-carla:humble docker/
 Con CARLA ya corriendo, levantar el bridge y el sistema de navegación en un solo comando desde la raíz del repositorio:
 
 ```bash
-docker compose -f tools/docker-compose-carla.yaml up
+xhost +local:docker
+docker compose -f tools/docker-compose.yaml up
 ```
 
 Esto arranca tres contenedores en paralelo:
@@ -94,9 +95,9 @@ Esto arranca tres contenedores en paralelo:
 Para lanzarlos en terminales separadas y ver los logs independientemente:
 
 ```bash
-docker compose -f tools/docker-compose-carla.yaml up ros_bridge
-docker compose -f tools/docker-compose-carla.yaml up navegacion
-docker compose -f tools/docker-compose-carla.yaml up foxglove
+docker compose -f tools/docker-compose.yaml up ros_bridge
+docker compose -f tools/docker-compose.yaml up navegacion
+docker compose -f tools/docker-compose.yaml up foxglove
 ```
 
 ### Ejecutar comandos en los contenedores
@@ -133,3 +134,65 @@ Para cargar el layout predefinido con las dos cámaras (`rgb_view` y `rgb_front`
 El layout carga dos paneles de imagen:
 - **Izquierda**: `/carla/ego_vehicle/rgb_view/image` — vista exterior del vehículo
 - **Derecha**: `/carla/ego_vehicle/rgb_front/image` — cámara frontal (detección de señales)
+
+## Generación de Dataset
+
+El paquete incluye dos nodos de recolección que funcionan en modo conducción manual (sin `vehicle_control_node`). Controla el vehículo con `W/A/S/D` desde CARLA (`B` para activar el modo manual).
+
+Ambos usan la **segmentación semántica de CARLA** como ground truth perfecto.
+
+### Dataset de señales
+
+```bash
+xhost +local:docker
+docker compose -f tools/docker-compose-sign-dataset.yaml up
+```
+
+- **Nodo**: `sign_dataset_node` — detecta señales (color amarillo en semántica), extrae bounding boxes y guarda imagen RGB + JSON de anotaciones.
+- **Salida**: `dataset/signs/images/` y `dataset/signs/annotations/`
+
+### Dataset de carriles
+
+```bash
+xhost +local:docker
+docker compose -f tools/docker-compose-lane-dataset.yaml up
+```
+
+- **Nodo**: `lane_dataset_node` — detecta marcas viales en la máscara semántica, la remap al espacio RGB y guarda imagen RGB + máscara binaria de ground truth.
+- **Salida**: `dataset/lanes/images/` y `dataset/lanes/masks/`
+
+### Visualización
+
+```bash
+# Señales (bounding boxes sobre RGB)
+python3 tools/visualize_signs_dataset.py dataset/signs
+python3 tools/visualize_signs_dataset.py dataset/signs --min-signs 2 --slideshow --delay 1000
+python3 tools/visualize_signs_dataset.py dataset/signs --output dataset/signs/visualized
+
+# Carriles (máscara superpuesta sobre RGB)
+python3 tools/visualize_lanes_dataset.py dataset/lanes
+python3 tools/visualize_lanes_dataset.py dataset/lanes --slideshow --delay 1000
+python3 tools/visualize_lanes_dataset.py dataset/lanes --output dataset/lanes/visualized
+```
+
+**Ejecutar en Docker:**
+
+```bash
+xhost +local:docker
+
+# Señales
+docker run --rm -it --network host -e DISPLAY=${DISPLAY} \
+  -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
+  -v $(pwd)/dataset/signs:/dataset:ro \
+  -v $(pwd)/tools:/tools:ro \
+  navegacion_deteccion_senales \
+  python3 /tools/visualize_signs_dataset.py /dataset
+
+# Carriles
+docker run --rm -it --network host -e DISPLAY=${DISPLAY} \
+  -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
+  -v $(pwd)/dataset/lanes:/dataset:ro \
+  -v $(pwd)/tools:/tools:ro \
+  navegacion_deteccion_senales \
+  python3 /tools/visualize_lanes_dataset.py /dataset
+```
