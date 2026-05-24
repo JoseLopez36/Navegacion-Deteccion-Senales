@@ -49,6 +49,7 @@ sign_dataset_node:
     capture_rate: 5.0
     min_sign_area: 200
     max_sign_area: 50000
+    crop_margin: 10
 
 lane_dataset_node:
   ros__parameters:

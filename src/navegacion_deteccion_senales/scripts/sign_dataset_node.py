@@ -3,8 +3,14 @@
 Nodo para recolección de datos de señales de tráfico mediante conducción manual.
 
 Este nodo usa la imagen de segmentación semántica de CARLA para detectar
-señales de tráfico con ground truth, guardando las imágenes RGB
-junto con anotaciones JSON para entrenamiento de modelos.
+señales de tráfico con ground truth y genera dos datasets:
+
+  1. Detection dataset  — imagen RGB completa + anotaciones JSON con bounding boxes.
+       output_dir/detection/images/<stem>.jpg
+       output_dir/detection/annotations/<stem>.json
+
+  2. Classification dataset — recorte de la señal con margen para etiquetado manual.
+       output_dir/classification/images/<stem>_<idx>.jpg
 """
 
 import os
@@ -41,7 +47,8 @@ class SignDatasetNode(Node):
     Funcionalidad:
       - Detecta señales usando segmentación semántica de CARLA (ground truth)
       - Extrae bounding boxes de las señales detectadas
-      - Guarda imágenes RGB y anotaciones JSON
+      - Dataset de detección: imagen RGB completa + JSON con bounding boxes
+      - Dataset de clasificación: recortes de señal con margen para etiquetado manual
     """
 
     def __init__(self):
@@ -56,6 +63,7 @@ class SignDatasetNode(Node):
         self.declare_parameter('capture_rate', 5.0)
         self.declare_parameter('min_sign_area', 200)
         self.declare_parameter('max_sign_area', 50000)
+        self.declare_parameter('crop_margin', 10)
 
         self.image_topic = self.get_parameter('image_topic').value
         self.rgb_camera_info_topic = self.get_parameter('rgb_camera_info_topic').value
@@ -65,12 +73,20 @@ class SignDatasetNode(Node):
         self.capture_rate = float(self.get_parameter('capture_rate').value)
         self.min_sign_area = int(self.get_parameter('min_sign_area').value)
         self.max_sign_area = int(self.get_parameter('max_sign_area').value)
+        self.crop_margin = int(self.get_parameter('crop_margin').value)
 
         # --- Crear directorios de salida ---
-        self.images_dir = os.path.join(self.output_dir, 'images')
-        self.annotations_dir = os.path.join(self.output_dir, 'annotations')
-        os.makedirs(self.images_dir, exist_ok=True)
-        os.makedirs(self.annotations_dir, exist_ok=True)
+        # Detection dataset
+        self.det_images_dir = os.path.join(self.output_dir, 'detection', 'images')
+        self.det_annotations_dir = os.path.join(self.output_dir, 'detection', 'annotations')
+        os.makedirs(self.det_images_dir, exist_ok=True)
+        os.makedirs(self.det_annotations_dir, exist_ok=True)
+
+        # Classification dataset
+        self.cls_images_dir = os.path.join(self.output_dir, 'classification', 'images')
+        self.cls_annotations_dir = os.path.join(self.output_dir, 'classification', 'annotations')
+        os.makedirs(self.cls_images_dir, exist_ok=True)
+        os.makedirs(self.cls_annotations_dir, exist_ok=True)
 
         # --- QoS ---
         sensor_qos = QoSProfile(
@@ -103,7 +119,9 @@ class SignDatasetNode(Node):
 
         self.get_logger().info('sign_dataset_node iniciado.')
         self.get_logger().info(f'Guardando dataset en: {self.output_dir}')
-        self.get_logger().info(f'Capture rate: {self.capture_rate} Hz')
+        self.get_logger().info(f'  Detección:      {self.output_dir}/detection/')
+        self.get_logger().info(f'  Clasificación:  {self.output_dir}/classification/')
+        self.get_logger().info(f'Capture rate: {self.capture_rate} Hz | Crop margin: {self.crop_margin} px')
 
     def _on_rgb_camera_info(self, msg: CameraInfo):
         self.rgb_camera_info = msg
@@ -128,7 +146,8 @@ class SignDatasetNode(Node):
 
         if detections:
             self.last_capture_time = current_time
-            self._save_sample(rgb_frame, detections, rgb_msg.header.stamp)
+            self._save_detection_sample(rgb_frame, detections, rgb_msg.header.stamp)
+            self._save_classification_crops(rgb_frame, detections)
 
     # ------------------------------------------------------------------
     # Detección de señales desde segmentación semántica
@@ -197,16 +216,16 @@ class SignDatasetNode(Node):
     # Guardado de muestras
     # ------------------------------------------------------------------
 
-    def _save_sample(self, frame, detections, timestamp):
-        """Guarda la imagen y anotaciones JSON."""
+    def _save_detection_sample(self, frame, detections, timestamp):
+        """Dataset de detección: guarda la imagen RGB completa y anotaciones JSON con bounding boxes."""
         ts = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
         image_filename = f'sign_{ts}.jpg'
         json_filename = f'sign_{ts}.json'
 
-        cv2.imwrite(os.path.join(self.images_dir, image_filename), frame)
+        cv2.imwrite(os.path.join(self.det_images_dir, image_filename), frame)
 
         annotation = {
-            'image': f'images/{image_filename}',
+            'image': f'detection/images/{image_filename}',
             'timestamp': timestamp.sec + timestamp.nanosec * 1e-9,
             'image_size': {
                 'width': frame.shape[1],
@@ -217,15 +236,59 @@ class SignDatasetNode(Node):
             'num_signs': len(detections),
         }
 
-        with open(os.path.join(self.annotations_dir, json_filename), 'w') as f:
+        with open(os.path.join(self.det_annotations_dir, json_filename), 'w') as f:
             json.dump(annotation, f, indent=2)
 
         self.total_signs += len(detections)
         self.get_logger().info(
-            f'Guardada muestra: {image_filename} | '
+            f'[Detección]      {image_filename} | '
             f'Señales: {len(detections)} | '
-            f'Total capturas: {self.total_signs}'
+            f'Total: {self.total_signs}'
         )
+
+    def _save_classification_crops(self, frame, detections):
+        """Dataset de clasificación: guarda un recorte con margen por cada señal detectada."""
+        img_h, img_w = frame.shape[:2]
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+
+        saved = 0
+        for idx, det in enumerate(detections):
+            x, y, w, h = det['bbox']
+
+            if x <= 0 or y <= 0 or x + w >= img_w or y + h >= img_h:
+                self.get_logger().debug(
+                    f'[Clasificación]  Señal parcial descartada (bbox toca el borde): '
+                    f'x={x} y={y} w={w} h={h} img={img_w}x{img_h}'
+                )
+                continue
+
+            x1 = max(0, x - self.crop_margin)
+            y1 = max(0, y - self.crop_margin)
+            x2 = min(img_w, x + w + self.crop_margin)
+            y2 = min(img_h, y + h + self.crop_margin)
+
+            if x2 <= x1 or y2 <= y1:
+                continue
+
+            crop = frame[y1:y2, x1:x2]
+            crop_stem = f'crop_{ts}_{idx}'
+            cv2.imwrite(os.path.join(self.cls_images_dir, f'{crop_stem}.jpg'), crop)
+
+            annotation = {
+                'image': f'classification/images/{crop_stem}.jpg',
+                'class': 'unknown',
+                'source_image': f'detection/images/sign_{ts}.jpg',
+                'bbox': {'x': x, 'y': y, 'w': w, 'h': h},
+                'crop_size': {'width': x2 - x1, 'height': y2 - y1},
+            }
+            with open(os.path.join(self.cls_annotations_dir, f'{crop_stem}.json'), 'w') as f:
+                json.dump(annotation, f, indent=2)
+            saved += 1
+
+        if saved:
+            self.get_logger().info(
+                f'[Clasificación]  {saved} recorte(s) guardado(s) en {self.cls_images_dir}'
+            )
 
 
 def main(args=None):
