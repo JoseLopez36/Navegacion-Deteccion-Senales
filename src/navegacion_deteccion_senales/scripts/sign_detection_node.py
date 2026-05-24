@@ -29,10 +29,12 @@ class SignDetectionNode(Node):
         self.declare_parameter('image_topic', '/carla/ego_vehicle/rgb_front/image')
         self.declare_parameter('sign_label_topic', '/sign_detection/sign_label')
         self.declare_parameter('speed_limit_topic', '/sign_detection/speed_limit')
+        self.declare_parameter('model_path', '')
 
         self.image_topic       = self.get_parameter('image_topic').value
         self.sign_label_topic  = self.get_parameter('sign_label_topic').value
         self.speed_limit_topic = self.get_parameter('speed_limit_topic').value
+        self.model_path        = self.get_parameter('model_path').value
 
         # --- QoS ---
         sensor_qos = QoSProfile(

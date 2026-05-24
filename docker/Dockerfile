@@ -51,10 +51,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-${ROS_DISTRO}-python-qt-binding \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Python ML packages ─────────────────────────────────────────────────────────
+# ── Lane detection model dependencies ─────────────────────────────────────────
+RUN pip3 install --no-cache-dir \
+    "numpy==1.24.3" \
+    "tensorflow>=2.16,<2.19"
+
+# ── Sign detection model dependencies ─────────────────────────────────────────
 # RUN pip3 install --no-cache-dir \
-#     carla==0.9.15 \
-#     tensorflow==2.15.0
+#     torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 
 # ── CARLA Python client ───────────────────────────────────────────────────────
 RUN pip3 install --no-cache-dir carla==0.9.15 transforms3d
@@ -64,7 +68,9 @@ RUN git clone --recurse-submodules \
     https://github.com/carla-simulator/ros-bridge.git \
     /home/ros/workspace/src/ros-bridge \
  && echo "0.9.15" > \
-    /home/ros/workspace/src/ros-bridge/carla_ros_bridge/src/carla_ros_bridge/CARLA_VERSION
+    /home/ros/workspace/src/ros-bridge/carla_ros_bridge/src/carla_ros_bridge/CARLA_VERSION \
+ && find /home/ros/workspace/src/ros-bridge -name "*.py" -exec \
+    sed -i 's/\bnumpy\.bool\b/numpy.bool_/g; s/\bnp\.bool\b/np.bool_/g' {} +
 
 # ── Workspace ─────────────────────────────────────────────────────────────────
 RUN mkdir -p /home/ros/workspace/src

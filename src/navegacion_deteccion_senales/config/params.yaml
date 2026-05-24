@@ -14,12 +14,15 @@ lane_detection_node:
   ros__parameters:
     image_topic: /carla/ego_vehicle/rgb_front/image
     lane_error_topic: /lane_detection/lane_error
+    lane_state_topic: /lane_detection/lane_state
+    model_path: /home/ros/workspace/src/navegacion_deteccion_senales/models/lane_model.keras
 
 sign_detection_node:
   ros__parameters:
     image_topic: /carla/ego_vehicle/rgb_front/image
     sign_label_topic: /sign_detection/sign_label
     speed_limit_topic: /sign_detection/speed_limit
+    model_path: ''
 
 annotation_generator_node:
   ros__parameters:
