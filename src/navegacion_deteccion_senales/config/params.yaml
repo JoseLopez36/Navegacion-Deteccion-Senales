@@ -1,11 +1,16 @@
 vehicle_control_node:
   ros__parameters:
-    control_rate: 20.0 # Hz
-    target_speed: 5.0 # m/s (~18 km/h)
-    max_steering_angle: 0.5 # rad
-    kp_steering: 0.005 # proporcional al error lateral en píxeles
-    kp_throttle: 0.3
+    control_rate: 20.0          # Hz
+    target_speed: 5.0           # m/s (~18 km/h)
+    max_steering_angle: 0.5     # rad
+    kp_steering: 0.005          # P sobre error lateral en píxeles
+    kd_steering: 0.001          # D sobre derivada del error lateral
+    kp_throttle: 0.3            # P sobre error de velocidad
+    ki_throttle: 0.05           # I sobre error de velocidad
+    max_integral: 1.0           # anti-windup del integrador
+    lane_loss_timeout: 1.0      # s sin carril detectado → frena
     lane_error_topic: /lane_detection/lane_error
+    lane_state_topic: /lane_detection/lane_state
     speed_limit_topic: /sign_detection/speed_limit
     speedometer_topic: /carla/ego_vehicle/speedometer
     vehicle_control_topic: /carla/ego_vehicle/vehicle_control_cmd
