@@ -133,44 +133,39 @@ class AnnotationGeneratorNode(Node):
 
     @staticmethod
     def _points_annotation(stamp: Time, ann_type, thickness: float,
-                           outline_r: float, outline_g: float,
-                           outline_b: float, outline_a: float,
-                           fill_r: float = 0.0, fill_g: float = 0.0,
-                           fill_b: float = 0.0, fill_a: float = 0.0) -> PointsAnnotation:
+                           outline: tuple, fill: tuple = (0.0, 0.0, 0.0, 0.0)) -> PointsAnnotation:
         ann = PointsAnnotation()
         ann.timestamp = stamp
         ann.type = ann_type
         ann.thickness = thickness
-        ann.outline_color.r = outline_r
-        ann.outline_color.g = outline_g
-        ann.outline_color.b = outline_b
-        ann.outline_color.a = outline_a
-        ann.fill_color.r = fill_r
-        ann.fill_color.g = fill_g
-        ann.fill_color.b = fill_b
-        ann.fill_color.a = fill_a
+        ann.outline_color.r, ann.outline_color.g, ann.outline_color.b, ann.outline_color.a = outline
+        ann.fill_color.r, ann.fill_color.g, ann.fill_color.b, ann.fill_color.a = fill
         return ann
 
     @staticmethod
     def _text_annotation(stamp: Time, x: float, y: float, text: str,
-                         font_size: float,
-                         r: float, g: float, b: float, a: float) -> TextAnnotation:
+                         font_size: float, color: tuple) -> TextAnnotation:
         t = TextAnnotation()
         t.timestamp = stamp
         t.position.x = float(x)
         t.position.y = float(y)
         t.text = text
         t.font_size = font_size
-        t.text_color.r = r
-        t.text_color.g = g
-        t.text_color.b = b
-        t.text_color.a = a
+        t.text_color.r, t.text_color.g, t.text_color.b, t.text_color.a = color
         t.background_color.a = 0.0
         return t
 
     # ------------------------------------------------------------------
     # Construcción de anotaciones
     # ------------------------------------------------------------------
+
+    # Colores de zona para el HUD
+    _ZONE_COLOR = {
+        'CENTER':  (0.0,  1.0,  0.4,  1.0),
+        'LEFT':    (1.0,  0.25, 0.25, 1.0),
+        'RIGHT':   (1.0,  0.25, 0.25, 1.0),
+        'UNKNOWN': (0.55, 0.55, 0.55, 1.0),
+    }
 
     def _build_annotations(self, stamp: Time) -> ImageAnnotations:
         ann = ImageAnnotations()
@@ -180,76 +175,103 @@ class AnnotationGeneratorNode(Node):
         h = float(s.get('image_height', self.image_height))
         cx = w / 2.0
 
-        left = s.get('left')
+        left  = s.get('left')
         right = s.get('right')
 
+        # ── Línea izquierda (amarillo) ──────────────────────────────────
         if left:
             line = self._points_annotation(
-                stamp, PointsAnnotation.LINE_STRIP, 4.0,
-                1.0, 0.39, 0.0, 1.0)
+                stamp, PointsAnnotation.LINE_STRIP, 5.0,
+                outline=(1.0, 0.85, 0.0, 1.0))
             line.points.extend([
                 self._point2(left[0], left[1]),
                 self._point2(left[2], left[3])])
             ann.points.append(line)
 
+        # ── Línea derecha (cian) ────────────────────────────────────────
         if right:
             line = self._points_annotation(
-                stamp, PointsAnnotation.LINE_STRIP, 4.0,
-                0.0, 0.78, 1.0, 1.0)
+                stamp, PointsAnnotation.LINE_STRIP, 5.0,
+                outline=(0.0, 0.85, 1.0, 1.0))
             line.points.extend([
                 self._point2(right[0], right[1]),
                 self._point2(right[2], right[3])])
             ann.points.append(line)
 
+        # ── Polígono de carril (relleno verde semitransparente) ─────────
         if left and right:
             poly = self._points_annotation(
-                stamp, PointsAnnotation.LINE_LOOP, 2.0,
-                0.0, 0.71, 0.0, 0.6,
-                0.0, 0.71, 0.0, 0.15)
+                stamp, PointsAnnotation.LINE_LOOP, 1.0,
+                outline=(0.0, 1.0, 0.4, 0.5),
+                fill=(0.0, 1.0, 0.4, 0.12))
             poly.points.extend([
-                self._point2(left[0], left[1]),
-                self._point2(left[2], left[3]),
+                self._point2(left[0],  left[1]),
+                self._point2(left[2],  left[3]),
                 self._point2(right[2], right[3]),
                 self._point2(right[0], right[1])])
             ann.points.append(poly)
 
+        # ── Línea de desviación: centro imagen → centro de carril ───────
+        offset_px     = float(s.get('offset_px', 0.0))
+        lane_center_x = cx - offset_px
+        y_dev         = h * 0.72
+
         deviation = self._points_annotation(
-            stamp, PointsAnnotation.LINE_STRIP, 2.0,
-            1.0, 1.0, 0.0, 1.0)
-        lane_center_x = cx - self.lane_error
+            stamp, PointsAnnotation.LINE_STRIP, 2.5,
+            outline=(1.0, 1.0, 0.0, 0.9))
         deviation.points.extend([
-            self._point2(cx, h * 0.7),
-            self._point2(lane_center_x, h * 0.7)])
+            self._point2(cx, y_dev),
+            self._point2(lane_center_x, y_dev)])
         ann.points.append(deviation)
 
-        zone = s.get('zone', 'UNKNOWN')
+        # Punto en el centro del carril
+        dot = self._points_annotation(
+            stamp, PointsAnnotation.POINTS, 8.0,
+            outline=(1.0, 1.0, 0.0, 1.0),
+            fill=(1.0, 1.0, 0.0, 1.0))
+        dot.points.append(self._point2(lane_center_x, y_dev))
+        ann.points.append(dot)
+
+        # Punto en el centro del vehículo (blanco)
+        ego = self._points_annotation(
+            stamp, PointsAnnotation.POINTS, 8.0,
+            outline=(1.0, 1.0, 1.0, 0.8),
+            fill=(1.0, 1.0, 1.0, 0.8))
+        ego.points.append(self._point2(cx, y_dev))
+        ann.points.append(ego)
+
+        # ── HUD izquierdo: estado del carril ────────────────────────────
+        zone    = s.get('zone', 'UNKNOWN')
         lateral = s.get('lateral', 0.5)
-        offset = s.get('offset_px', self.lane_error)
+        l_det   = int(s.get('left_detected',  False))
+        r_det   = int(s.get('right_detected', False))
+        zone_color = self._ZONE_COLOR.get(zone, (1.0, 1.0, 1.0, 1.0))
 
         ann.texts.append(self._text_annotation(
-            stamp, 10.0, 30.0, f'Zona: {zone}', 20.0,
-            0.0, 1.0, 0.4, 1.0))
+            stamp, 12.0, 28.0, f'Zona: {zone}', 22.0, zone_color))
         ann.texts.append(self._text_annotation(
-            stamp, 10.0, 55.0,
-            f'Lateral: {lateral:.2f}  Offset: {int(offset):+d}px', 18.0,
-            1.0, 1.0, 0.0, 1.0))
+            stamp, 12.0, 54.0,
+            f'Error: {self.lane_error:+.4f} m  ({int(offset_px):+d} px)', 17.0,
+            (1.0, 1.0, 0.0, 1.0)))
         ann.texts.append(self._text_annotation(
-            stamp, 10.0, 75.0,
-            f"L:{int(s.get('left_detected', False))}  R:{int(s.get('right_detected', False))}",
-            16.0, 0.6, 0.6, 0.6, 1.0))
+            stamp, 12.0, 76.0,
+            f'Lateral: {lateral:.2f}   L:{l_det}  R:{r_det}', 15.0,
+            (0.65, 0.65, 0.65, 1.0)))
 
+        # ── HUD derecho: estado del control ─────────────────────────────
         speed_kmh = self.current_speed * 3.6
+        rx = w - 160.0
+
         ann.texts.append(self._text_annotation(
-            stamp, w - 220.0, 30.0, f'Vel: {speed_kmh:.1f} km/h', 20.0,
-            1.0, 1.0, 1.0, 1.0))
+            stamp, rx, 28.0, f'{speed_kmh:.1f} km/h', 22.0,
+            (1.0, 1.0, 1.0, 1.0)))
         ann.texts.append(self._text_annotation(
-            stamp, w - 220.0, 55.0,
-            f'Throttle: {self.cmd_throttle:.2f}  Brake: {self.cmd_brake:.2f}', 17.0,
-            0.4, 1.0, 0.4, 1.0))
+            stamp, rx, 54.0,
+            f'T {self.cmd_throttle:.2f}  B {self.cmd_brake:.2f}', 17.0,
+            (0.4, 1.0, 0.4, 1.0)))
         ann.texts.append(self._text_annotation(
-            stamp, w - 220.0, 75.0,
-            f'Steer: {self.cmd_steer:+.3f} rad', 17.0,
-            1.0, 0.65, 0.0, 1.0))
+            stamp, rx, 76.0, f'Steer {self.cmd_steer:+.3f}', 17.0,
+            (1.0, 0.65, 0.0, 1.0)))
 
         return ann
 

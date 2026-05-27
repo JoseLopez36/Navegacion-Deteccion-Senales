@@ -41,6 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-${ROS_DISTRO}-rviz2 \
     ros-${ROS_DISTRO}-foxglove-bridge \
     ros-${ROS_DISTRO}-foxglove-msgs \
+    ros-${ROS_DISTRO}-rosbag2-storage-mcap \
     # carla-ros-bridge runtime deps
     ros-${ROS_DISTRO}-ackermann-msgs \
     ros-${ROS_DISTRO}-derived-object-msgs \
@@ -50,15 +51,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-${ROS_DISTRO}-rqt \
     ros-${ROS_DISTRO}-python-qt-binding \
     && rm -rf /var/lib/apt/lists/*
-
-# ── Lane detection model dependencies ─────────────────────────────────────────
-RUN pip3 install --no-cache-dir \
-    "numpy==1.24.3" \
-    "tensorflow>=2.16,<2.19"
-
-# ── Sign detection model dependencies ─────────────────────────────────────────
-# RUN pip3 install --no-cache-dir \
-#     torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 
 # ── CARLA Python client ───────────────────────────────────────────────────────
 RUN pip3 install --no-cache-dir carla==0.9.15 transforms3d

@@ -4,10 +4,8 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 
-import json
-
-from std_msgs.msg import Float32, String
-from carla_msgs.msg import CarlaEgoVehicleControl, CarlaEgoVehicleStatus
+from std_msgs.msg import Float32
+from carla_msgs.msg import CarlaEgoVehicleControl
 
 
 class VehicleControlNode(Node):
@@ -15,18 +13,11 @@ class VehicleControlNode(Node):
     Nodo de control del vehículo.
 
     Suscripciones:
-      - /lane_detection/lane_error          (std_msgs/Float32)  — error lateral en píxeles
-      - /lane_detection/lane_state          (std_msgs/String)   — JSON con estado del carril
-      - /sign_detection/speed_limit         (std_msgs/Float32)  — límite de velocidad (m/s)
+      - /lane_detection/lane_error          (std_msgs/Float32)              — error lateral en metros
       - /carla/ego_vehicle/speedometer      (std_msgs/Float32)
 
     Publicaciones:
       - /carla/ego_vehicle/vehicle_control_cmd (carla_msgs/CarlaEgoVehicleControl)
-
-    Control:
-      - Dirección: PD sobre error lateral en píxeles
-      - Velocidad:  PI sobre error de velocidad con braking activo
-      - Seguridad:  frena si no se detecta carril durante > lane_loss_timeout s
     """
 
     def __init__(self):
@@ -34,33 +25,31 @@ class VehicleControlNode(Node):
 
         # --- Parámetros ---
         self.declare_parameter('control_rate', 20.0)
-        self.declare_parameter('target_speed', 5.0)           # m/s
-        self.declare_parameter('max_steering_angle', 0.5)     # rad
-        self.declare_parameter('kp_steering', 0.005)          # P sobre error en píxeles
-        self.declare_parameter('kd_steering', 0.001)          # D sobre derivada del error
-        self.declare_parameter('kp_throttle', 0.3)            # P sobre error de velocidad
-        self.declare_parameter('ki_throttle', 0.05)           # I sobre error de velocidad
-        self.declare_parameter('max_integral', 1.0)           # anti-windup
-        self.declare_parameter('lane_loss_timeout', 1.0)      # s sin carril → frena
+        self.declare_parameter('target_speed', 5.0) # m/s
+        self.declare_parameter('max_steer', 1.0) # normalizado CARLA [-1, 1]
+        self.declare_parameter('max_steer_rad', 0.6) # ángulo físico máximo del volante [rad]
+        self.declare_parameter('kp_throttle', 0.3)
+        self.declare_parameter('ki_throttle', 0.01)
+        self.declare_parameter('kd_throttle', 0.05)
+        self.declare_parameter('kp_steering', 0.002)
+        self.declare_parameter('ki_steering', 0.001)
+        self.declare_parameter('kd_steering', -1.07e-05)
         self.declare_parameter('lane_error_topic', '/lane_detection/lane_error')
-        self.declare_parameter('lane_state_topic', '/lane_detection/lane_state')
-        self.declare_parameter('speed_limit_topic', '/sign_detection/speed_limit')
         self.declare_parameter('speedometer_topic', '/carla/ego_vehicle/speedometer')
         self.declare_parameter('vehicle_control_topic', '/carla/ego_vehicle/vehicle_control_cmd')
 
-        self.control_rate          = float(self.get_parameter('control_rate').value)
-        self.target_speed          = float(self.get_parameter('target_speed').value)
-        self.max_steering_angle    = float(self.get_parameter('max_steering_angle').value)
-        self.kp_steering           = float(self.get_parameter('kp_steering').value)
-        self.kd_steering           = float(self.get_parameter('kd_steering').value)
-        self.kp_throttle           = float(self.get_parameter('kp_throttle').value)
-        self.ki_throttle           = float(self.get_parameter('ki_throttle').value)
-        self.max_integral          = float(self.get_parameter('max_integral').value)
-        self.lane_loss_timeout     = float(self.get_parameter('lane_loss_timeout').value)
-        self.lane_error_topic      = self.get_parameter('lane_error_topic').value
-        self.lane_state_topic      = self.get_parameter('lane_state_topic').value
-        self.speed_limit_topic     = self.get_parameter('speed_limit_topic').value
-        self.speedometer_topic     = self.get_parameter('speedometer_topic').value
+        self.control_rate         = float(self.get_parameter('control_rate').value)
+        self.target_speed         = float(self.get_parameter('target_speed').value)
+        self.max_steer            = float(self.get_parameter('max_steer').value)
+        self.max_steer_rad        = float(self.get_parameter('max_steer_rad').value)
+        self.kp_throttle          = float(self.get_parameter('kp_throttle').value)
+        self.ki_throttle          = float(self.get_parameter('ki_throttle').value)
+        self.kd_throttle          = float(self.get_parameter('kd_throttle').value)
+        self.kp_steering          = float(self.get_parameter('kp_steering').value)
+        self.ki_steering          = float(self.get_parameter('ki_steering').value)
+        self.kd_steering          = float(self.get_parameter('kd_steering').value)
+        self.lane_error_topic     = self.get_parameter('lane_error_topic').value
+        self.speedometer_topic    = self.get_parameter('speedometer_topic').value
         self.vehicle_control_topic = self.get_parameter('vehicle_control_topic').value
 
         # --- QoS ---
@@ -78,14 +67,19 @@ class VehicleControlNode(Node):
         )
 
         # --- Estado interno ---
-        self.lane_error       = 0.0
-        self.prev_lane_error  = 0.0
-        self.speed_limit      = self.target_speed
-        self.current_speed    = 0.0
-        self.throttle_integral = 0.0
-        self.lane_detected    = False
-        self._last_lane_time  = self.get_clock().now().nanoseconds / 1e9
-        self._last_control_time = self.get_clock().now().nanoseconds / 1e9
+        self.lane_error    = 0.0
+        self.speed_limit   = self.target_speed
+        self.current_speed = 0.0
+
+        # --- Estado PID crucero ---
+        self._throttle_integral  = 0.0
+        self._throttle_prev_err  = 0.0
+
+        # --- Estado PID dirección ---
+        self._steering_integral  = 0.0
+        self._steering_prev_err  = 0.0
+
+        self._prev_time = self.get_clock().now()
 
         # --- Publicadores ---
         self.control_pub = self.create_publisher(
@@ -99,18 +93,6 @@ class VehicleControlNode(Node):
             Float32,
             self.lane_error_topic,
             self._on_lane_error,
-            reliable_qos,
-        )
-        self.create_subscription(
-            String,
-            self.lane_state_topic,
-            self._on_lane_state,
-            reliable_qos,
-        )
-        self.create_subscription(
-            Float32,
-            self.speed_limit_topic,
-            self._on_speed_limit,
             reliable_qos,
         )
         self.create_subscription(
@@ -132,22 +114,6 @@ class VehicleControlNode(Node):
     def _on_lane_error(self, msg: Float32):
         self.lane_error = msg.data
 
-    def _on_lane_state(self, msg: String):
-        try:
-            state = json.loads(msg.data)
-            detected = state.get('left_detected', False) or state.get('right_detected', False)
-            if detected:
-                self.lane_detected = True
-                self._last_lane_time = self.get_clock().now().nanoseconds / 1e9
-            else:
-                self.lane_detected = False
-        except Exception:
-            pass
-
-    def _on_speed_limit(self, msg: Float32):
-        if msg.data > 0.0:
-            self.speed_limit = msg.data
-
     def _on_speedometer(self, msg: Float32):
         self.current_speed = msg.data
 
@@ -156,62 +122,72 @@ class VehicleControlNode(Node):
     # ------------------------------------------------------------------
 
     def _control_loop(self):
-        now = self.get_clock().now().nanoseconds / 1e9
-        dt = now - self._last_control_time
-        self._last_control_time = now
-        dt = max(dt, 1e-3)
+        now = self.get_clock().now()
+        dt  = max((now - self._prev_time).nanoseconds * 1e-9, 1e-6)
+        self._prev_time = now
 
-        # --- Seguridad: pérdida de carril ---
-        lane_age = now - self._last_lane_time
-        lane_lost = lane_age > self.lane_loss_timeout
+        throttle, brake = self._cruise_control(dt)
+        steering        = self._keep_lane(dt)
 
-        if lane_lost:
-            cmd = CarlaEgoVehicleControl()
-            cmd.hand_brake = False
-            cmd.reverse = False
-            cmd.manual_gear_shift = False
-            cmd.throttle = 0.0
-            cmd.brake = 0.7
-            cmd.steer = 0.0
-            self.control_pub.publish(cmd)
-            return
+        self.get_logger().info(
+            f'speed={self.current_speed:.2f}m/s  target={self.speed_limit:.1f}m/s  '
+            f'throttle={throttle:.2f}  brake={brake:.2f}  '
+            f'steer={steering:+.3f}  lane_err={self.lane_error:+.4f}m',
+            throttle_duration_sec=1.0,
+        )
 
-        # --- PD de dirección sobre error lateral en píxeles ---
-        d_error = (self.lane_error - self.prev_lane_error) / dt
-        self.prev_lane_error = self.lane_error
-
-        steering_raw = -(self.kp_steering * self.lane_error + self.kd_steering * d_error)
-        steering = float(max(-self.max_steering_angle, min(self.max_steering_angle, steering_raw)))
-
-        # --- PI de velocidad ---
-        effective_speed = min(self.speed_limit, self.target_speed)
-        speed_error = effective_speed - self.current_speed
-
-        if speed_error > 0.0:
-            self.throttle_integral += speed_error * dt
-            self.throttle_integral = min(self.throttle_integral, self.max_integral)
-        else:
-            self.throttle_integral = max(0.0, self.throttle_integral + speed_error * dt)
-
-        throttle_raw = self.kp_throttle * speed_error + self.ki_throttle * self.throttle_integral
-
-        if speed_error >= 0.0:
-            throttle = float(max(0.0, min(1.0, throttle_raw)))
-            brake = 0.0
-        else:
-            throttle = 0.0
-            brake = float(min(1.0, -throttle_raw * 0.5))
-
-        # --- Aplicar control ---
         cmd = CarlaEgoVehicleControl()
-        cmd.hand_brake = False
-        cmd.reverse = False
+        cmd.hand_brake        = False
+        cmd.reverse           = False
         cmd.manual_gear_shift = False
-        cmd.throttle = throttle
-        cmd.brake = brake
-        cmd.steer = steering
+        cmd.throttle          = throttle
+        cmd.brake             = brake
+        cmd.steer             = steering
 
         self.control_pub.publish(cmd)
+
+    def _cruise_control(self, dt: float):
+        """PID de velocidad. Devuelve (throttle, brake) en [0, 1]"""
+        error = self.speed_limit - self.current_speed
+
+        self._throttle_integral += error * dt
+        self._throttle_integral  = max(-10.0, min(10.0, self._throttle_integral))  # anti-windup
+        derivative = (error - self._throttle_prev_err) / dt
+        self._throttle_prev_err = error
+
+        output = (self.kp_throttle * error
+                  + self.ki_throttle * self._throttle_integral
+                  + self.kd_throttle * derivative)
+
+        throttle = float(max(0.0, min(1.0,  output)))
+        brake    = float(max(0.0, min(1.0, -output)))
+        return throttle, brake
+
+    def _keep_lane(self, dt: float) -> float:
+        """PID de mantenimiento de carril.
+
+        Entrada : lane_error en metros.
+        Salida  : steer normalizado CARLA en [-1, 1].
+
+        El PID opera en radianes (kp [rad/m], ki [rad/(m·s)], kd [rad·s/m]).
+        La salida en rad se normaliza por max_steer_rad antes de enviarse a CARLA.
+
+        Convención de signo:
+          lane_error > 0 → vehículo desplazado a la derecha → girar izquierda (steer < 0)
+        """
+        error = -self.lane_error  # negado: error positivo → corrección hacia la izquierda
+
+        self._steering_integral += error * dt
+        self._steering_integral  = max(-10.0, min(10.0, self._steering_integral))  # anti-windup
+        derivative = (error - self._steering_prev_err) / dt
+        self._steering_prev_err = error
+
+        steer_rad = (self.kp_steering * error
+                     + self.ki_steering * self._steering_integral
+                     + self.kd_steering * derivative)
+
+        steer_norm = steer_rad / self.max_steer_rad
+        return float(max(-self.max_steer, min(self.max_steer, steer_norm)))
 
 
 def main(args=None):

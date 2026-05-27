@@ -42,7 +42,8 @@
       },
       "synchronize": false,
       "imageMode": {
-        "imageTopic": "/carla/ego_vehicle/rgb_view/image"
+        "imageTopic": "/carla/ego_vehicle/rgb_view/image",
+        "calibrationTopic": "/carla/ego_vehicle/rgb_view/camera_info"
       }
     },
     "Image!3459h0l": {
@@ -93,8 +94,7 @@
             "visible": true
           }
         }
-      },
-      "foxglovePanelTitle": ""
+      }
     }
   },
   "globalVariables": {},
@@ -106,6 +106,6 @@
     "direction": "row",
     "first": "Image!1dzv3h9",
     "second": "Image!3459h0l",
-    "splitPercentage": 50.0
+    "splitPercentage": 50
   }
 }
