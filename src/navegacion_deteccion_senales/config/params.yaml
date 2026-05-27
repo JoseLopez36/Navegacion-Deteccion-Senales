@@ -20,7 +20,7 @@ lane_detection_node:
     image_topic: /carla/ego_vehicle/rgb_front/image
     lane_error_topic: /lane_detection/lane_error
     lane_state_topic: /lane_detection/lane_state
-    model_path: /home/ros/workspace/src/navegacion_deteccion_senales/models/lane_model.keras
+    model_path: /home/ros/workspace/src/navegacion_deteccion_senales/models/lane_model.onnx
 
 sign_detection_node:
   ros__parameters:

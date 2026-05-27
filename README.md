@@ -9,9 +9,9 @@ El objetivo es desarrollar un sistema de percepción y control básico para un v
 El flujo previsto es:
 
 1. Adquisición de imágenes desde las cámaras virtuales de CARLA.
-2. Preprocesamiento de imagen y detección de líneas de carril mediante OpenCV y transformada de Hough.
-3. Estimación del error lateral del vehículo respecto al centro del carril.
-4. Detección y reconocimiento de señales de tráfico mediante una CNN entrenada con PyTorch.
+2. Preprocesamiento de imagen y detección de líneas de carril mediante un modelo de segmentación semántica (U-Net con backbone VGG) entrenado con TensorFlow/Keras.
+3. Estimación del error lateral del vehículo respecto al centro del carril a partir de la máscara predicha.
+4. Detección y reconocimiento de señales de tráfico mediante una CNN.
 5. Interpretación de señales para adaptar la actuación del vehículo, por ejemplo limitando la velocidad ante señales de velocidad máxima.
 6. Publicación de comandos de control hacia CARLA.
 

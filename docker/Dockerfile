@@ -75,6 +75,15 @@ SHELL ["/bin/bash", "-c"]
 RUN source /opt/ros/${ROS_DISTRO}/setup.bash \
  && colcon build --symlink-install --packages-skip pcl_recorder rviz_carla_plugin carla_ad_demo
 
+# ── Model dependencies ─────────────────────────────────────────
+RUN pip3 install --no-cache-dir \
+    torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+
+RUN pip3 install --no-cache-dir onnxruntime-gpu
+
+# ── Downgrade numpy para compatibilidad con cv_bridge (ROS Humble) ──────────
+RUN pip3 install --no-cache-dir --force-reinstall "numpy<2"
+
 # ── Shell setup ───────────────────────────────────────────────────────────────
 RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> /root/.bashrc \
  && echo "[ -f /home/ros/workspace/install/setup.bash ] && source /home/ros/workspace/install/setup.bash" >> /root/.bashrc
