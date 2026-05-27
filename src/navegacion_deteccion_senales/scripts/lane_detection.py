@@ -2,10 +2,6 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras import backend as K
 
-# Pre-built TF wheels lack CUDA kernels for Blackwell (SM 12.x);
-# force CPU to avoid CUDA_ERROR_INVALID_PTX on load.
-tf.config.set_visible_devices([], 'GPU')
-
 
 def dice_coefficient(y_true, y_pred):
     y_true_f = K.flatten(y_true)
@@ -105,18 +101,3 @@ def predict_lane(image, model):
     batch = tf.expand_dims(image, axis=0)
     pred_mask = model(batch, training=False)
     return tf.math.round(pred_mask[0])
-
-
-def mask_to_steering(predicted_mask, threshold=0.5, roi_start=0.5):
-    """Convierte una máscara en steering normalizado [-1, 1]."""
-    mask = mask_to_array(predicted_mask)
-    h, w = mask.shape
-    binary = (mask > threshold).astype(np.uint8)
-    roi = binary[int(h * roi_start):, :]
-    if np.sum(roi) == 0:
-        return 0.0
-    coords = np.column_stack(np.where(roi > 0))
-    lane_center_x = np.mean(coords[:, 1])
-    image_center_x = w / 2.0
-    error = (lane_center_x - image_center_x) / image_center_x
-    return float(np.clip(-error, -1.0, 1.0))

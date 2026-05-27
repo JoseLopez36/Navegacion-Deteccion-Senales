@@ -2,7 +2,7 @@ services:
 
   # ── CARLA → ROS2 bridge ────────────────────────────────────────────────────
   ros_bridge:
-    image: navegacion_deteccion_senales
+    image: navdet-extended
     container_name: carla_ros_bridge
     network_mode: host
     stdin_open: true
@@ -45,7 +45,7 @@ services:
 
   # ── Recolección de dataset de señales ──────────────────────────────────────
   sign_dataset:
-    image: navegacion_deteccion_senales
+    image: navdet-extended
     container_name: sign_dataset_collector
     network_mode: host
     stdin_open: true
@@ -63,6 +63,7 @@ services:
       - ../src/navegacion_deteccion_senales:/home/ros/workspace/src/navegacion_deteccion_senales:rw
       - ../dataset/signs:/home/ros/workspace/src/navegacion_deteccion_senales/dataset:rw
       - ./fastdds_profile.xml:/fastdds_profile.xml:ro
+      - cuda_cache:/root/.nv:rw  # Persist JIT compiled kernels
     devices:
       - /dev/dri:/dev/dri
     deploy:
@@ -85,7 +86,7 @@ services:
 
   # ── Foxglove WebSocket bridge ─────────────────────────────────────────────
   foxglove:
-    image: navegacion_deteccion_senales
+    image: navdet-extended
     container_name: foxglove_bridge
     network_mode: host
     stdin_open: true
@@ -105,3 +106,7 @@ services:
         source /home/ros/workspace/install/setup.bash
         ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 \
           2>&1 | grep -v '\[INFO\]' | grep -v '\[WARN\]'
+
+volumes:
+  cuda_cache:
+    driver: local

@@ -67,13 +67,34 @@ Más info: [Guía de instalación de CARLA con Docker](https://medium.com/aimonk
 
 ## Puesta en marcha
 
-### Construir la imagen del contenedor ROS2
+### Construir las imágenes Docker
 
-Desde la raíz del repositorio:
+El proyecto usa una estructura multi-stage con dos imágenes:
+
+| Imagen | Descripción |
+|--------|-------------|
+| `navdet-base` | CUDA 12.8 + TensorFlow 2.19 (compatible con RTX Blackwell) |
+| `navdet-extended` | ROS2 Humble + CARLA 0.9.15 (hereda del base) |
+
+Desde la carpeta `docker/`:
 
 ```bash
-docker build -t navegacion_deteccion_senales docker/
+cd docker
+./build.sh           # Compila ambas imágenes
+./build.sh base      # Solo la imagen base
+./build.sh extended  # Solo la imagen extendida (requiere base)
 ```
+
+O manualmente:
+
+```bash
+docker build -f docker/base.Dockerfile -t navdet-base:latest .
+docker build -f docker/extended.Dockerfile -t navdet-extended:latest --build-arg BASE_IMAGE=navdet-base:latest .
+```
+
+### Pre-compilar kernels JIT (RTX Blackwell)
+
+Las GPUs Blackwell (RTX 50-series) requieren compilación JIT de kernels CUDA en la primera ejecución (~30 min).
 
 ### Lanzar con Docker Compose
 
@@ -89,7 +110,7 @@ Esto arranca tres contenedores en paralelo:
 | Servicio | Contenedor | Descripción |
 |---|---|---|
 | `ros_bridge` | `carla_ros_bridge` | Bridge CARLA → ROS2 + spawn del ego-vehicle |
-| `navegacion` | `navegacion_deteccion_senales` | Compila y lanza el paquete del proyecto |
+| `navegacion` | `navdet-extended` | Compila y lanza el paquete del proyecto |
 | `foxglove` | `foxglove_bridge` | WebSocket bridge en `ws://localhost:8765` para Foxglove Studio |
 
 Para lanzarlos en terminales separadas y ver los logs independientemente:
@@ -106,7 +127,7 @@ Abrir una shell interactiva en cualquiera de los tres contenedores en ejecución
 
 ```bash
 docker exec -it carla_ros_bridge bash
-docker exec -it navegacion_deteccion_senales bash
+docker exec -it navdet-extended bash
 docker exec -it foxglove_bridge bash
 ```
 
@@ -185,7 +206,7 @@ docker run --rm -it --network host -e DISPLAY=${DISPLAY} \
   -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
   -v $(pwd)/dataset/signs:/dataset:ro \
   -v $(pwd)/tools:/tools:ro \
-  navegacion_deteccion_senales \
+  navdet-extended \
   python3 /tools/visualize_signs_dataset.py /dataset
 
 # Carriles
@@ -193,6 +214,6 @@ docker run --rm -it --network host -e DISPLAY=${DISPLAY} \
   -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
   -v $(pwd)/dataset/lanes:/dataset:ro \
   -v $(pwd)/tools:/tools:ro \
-  navegacion_deteccion_senales \
+  navdet-extended \
   python3 /tools/visualize_lanes_dataset.py /dataset
 ```
