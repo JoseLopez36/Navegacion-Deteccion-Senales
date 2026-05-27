@@ -212,8 +212,8 @@ class AnnotationGeneratorNode(Node):
             ann.points.append(poly)
 
         # ── Línea de desviación: centro imagen → centro de carril ───────
-        offset_px     = float(s.get('offset_px', 0.0))
-        lane_center_x = cx - offset_px
+        error     = float(s.get('error', 0.0))
+        lane_center_x = cx - error
         y_dev         = h * 0.72
 
         deviation = self._points_annotation(
@@ -251,7 +251,7 @@ class AnnotationGeneratorNode(Node):
             stamp, 12.0, 28.0, f'Zona: {zone}', 22.0, zone_color))
         ann.texts.append(self._text_annotation(
             stamp, 12.0, 54.0,
-            f'Error: {self.lane_error:+.4f} m  ({int(offset_px):+d} px)', 17.0,
+            f'Error: {self.lane_error:+.4f} m  ({int(error):+d} px)', 17.0,
             (1.0, 1.0, 0.0, 1.0)))
         ann.texts.append(self._text_annotation(
             stamp, 12.0, 76.0,

@@ -14,9 +14,9 @@ import json
 import time
 
 from std_msgs.msg import Float32, String
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, CameraInfo
 
-import lane_detection as ld
+from lane_detection import LaneDetector
 
 
 class LaneDetectionNode(Node):
@@ -25,10 +25,12 @@ class LaneDetectionNode(Node):
 
     Suscripciones:
       - /carla/ego_vehicle/rgb_front/image (sensor_msgs/Image)
+      - /carla/ego_vehicle/rgb_front/camera_info (sensor_msgs/CameraInfo)
 
     Publicaciones:
       - /lane_detection/lane_error      (std_msgs/Float32)  — error lateral en píxeles
       - /lane_detection/lane_state      (std_msgs/String)   — JSON con estado del carril
+      - /lane_detection/mask            (sensor_msgs/Image) — máscara de segmentación
     """
 
     def __init__(self):
@@ -36,13 +38,17 @@ class LaneDetectionNode(Node):
 
         # --- Parámetros ---
         self.declare_parameter('image_topic', '/carla/ego_vehicle/rgb_front/image')
+        self.declare_parameter('camera_info_topic', '/carla/ego_vehicle/rgb_front/camera_info')
         self.declare_parameter('lane_error_topic', '/lane_detection/lane_error')
         self.declare_parameter('lane_state_topic', '/lane_detection/lane_state')
+        self.declare_parameter('lane_mask_topic', '/lane_detection/mask')
         self.declare_parameter('model_path', '/home/jose-lopez/Documents/WORKSPACE/Cuatrimestre_2/Percepcion_Automatica_Robotica/Navegacion-Deteccion-Senales/src/navegacion_deteccion_senales/models/lane_model.onnx')
 
         self.image_topic       = self.get_parameter('image_topic').value
+        self.camera_info_topic  = self.get_parameter('camera_info_topic').value
         self.lane_error_topic  = self.get_parameter('lane_error_topic').value
         self.lane_state_topic  = self.get_parameter('lane_state_topic').value
+        self.lane_mask_topic   = self.get_parameter('lane_mask_topic').value
         self.model_path        = self.get_parameter('model_path').value
 
         # --- QoS ---
@@ -59,61 +65,79 @@ class LaneDetectionNode(Node):
             depth=10,
         )
 
+        # --- Intrínsecos de la cámara ---
+        self._fx = None  # focal length en píxeles; None hasta recibir camera_info
+
         # --- Utilidades ---
         self.bridge = CvBridge()
         self.get_logger().info(f'Loading model from: {self.model_path}')
-        self.model = ld.load_model(self.model_path)
-        self.get_logger().info(f'Model loaded successfully: {type(self.model).__name__}')
+        self.detector = LaneDetector(self.model_path)
+        self.get_logger().info('Model loaded successfully.')
 
         # --- Publicadores ---
         self.error_pub = self.create_publisher(Float32, self.lane_error_topic, reliable_qos)
         self.state_pub = self.create_publisher(String, self.lane_state_topic, reliable_qos)
+        self.mask_pub  = self.create_publisher(Image, self.lane_mask_topic, reliable_qos)
 
         # --- Suscriptores ---
         self._latest_frame = None
         self.create_subscription(Image, self.image_topic, self._on_image, sensor_qos)
+        self.create_subscription(CameraInfo, self.camera_info_topic, self._on_camera_info, sensor_qos)
 
-        # Procesa el último frame disponible cada 0.1 segundos (10 Hz)
-        self.create_timer(0.1, self._process_latest_frame)
+        # Procesa el último frame disponible cada 0.2 segundos (5 Hz)
+        self.create_timer(0.2, self._process_latest_frame)
         self.get_logger().info('lane_detection_node iniciado.')
 
     # ------------------------------------------------------------------
     # Callbacks
     # ------------------------------------------------------------------
 
+    def _on_camera_info(self, msg: CameraInfo):
+        if self._fx is None:
+            self._fx = msg.k[0]  # K = [fx, 0, cx, 0, fy, cy, 0, 0, 1]
+            self.get_logger().info(f'camera_info recibido: fx={self._fx:.2f} px')
+            
     def _on_image(self, msg: Image):
-        """Almacena el frame más reciente; el procesamiento ocurre a 1 Hz."""
+        """Almacena el frame más reciente."""
         try:
             self._latest_frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         except Exception as e:
             self.get_logger().error(f'Error decoding image: {e}')
 
     def _process_latest_frame(self):
-        """Callback del timer a 1 Hz: detecta carriles en el último frame disponible."""
+        """Callback del timer: detecta carriles en el último frame disponible."""
         if self._latest_frame is None:
             return
+
         frame = self._latest_frame
-        h, w = frame.shape[:2]
-        self.get_logger().debug(f'Processing frame: {w}x{h}')
-        
         try:
             t0 = time.time()
-            state = ld.detect_lane_state(frame, roi_start=0.5)
+            error, state, mask = self.detector.detect_lane_state(frame, roi_start=0.50)
             inference_ms = (time.time() - t0) * 1000.0
 
-            # 4. Publicar error lateral
+            # Publicar error lateral
             error_msg = Float32()
-            error_msg.data = state['offset_px']
+            # Convertir a metros si ya se recibió camera_info
+            if self._fx is not None and self._fx > 0.0:
+                error_m = error / self._fx
+            else:
+                error_m = error  # fallback hasta recibir camera_info
+            error_msg.data = error_m
             self.error_pub.publish(error_msg)
 
-            # 5. Publicar estado del carril en JSON
+            # Publicar estado del carril en JSON
             state_msg = String()
-            state_msg.data = json.dumps(state)
+            state_msg.data = json.dumps({k: v for k, v in state.items()})
             self.state_pub.publish(state_msg)
+
+            # Publicar máscara de detección
+            mask_msg = self.bridge.cv2_to_imgmsg(mask, encoding='mono8')
+            mask_msg.header.stamp = self.get_clock().now().to_msg()
+            self.mask_pub.publish(mask_msg)
 
             self.get_logger().info(
                 f"Inference: {inference_ms:.1f} ms | "
-                f"Error: {state['offset_px']:+.1f} px | "
+                f"Error: {state['error']:+.1f} px | "
                 f"Zone: {state['zone']} | "
                 f"Left: {state['left_detected']} Right: {state['right_detected']}"
             )

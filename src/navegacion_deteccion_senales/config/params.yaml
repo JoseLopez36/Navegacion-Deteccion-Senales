@@ -18,6 +18,7 @@ vehicle_control_node:
 lane_detection_node:
   ros__parameters:
     image_topic: /carla/ego_vehicle/rgb_front/image
+    camera_info_topic: /carla/ego_vehicle/rgb_front/camera_info
     lane_error_topic: /lane_detection/lane_error
     lane_state_topic: /lane_detection/lane_state
     model_path: /home/ros/workspace/src/navegacion_deteccion_senales/models/lane_model.onnx
