@@ -1,11 +1,24 @@
 # ROS2 Humble + CARLA Python client for autonomous navigation and traffic sign detection
-FROM ros:humble-ros-base-jammy
+FROM nvidia/cuda:12.8.0-cudnn-runtime-ubuntu22.04
 
 # ── Environment ────────────────────────────────────────────────────────────────
 ENV DEBIAN_FRONTEND=noninteractive \
     ROS_DISTRO=humble \
     CARLA_HOST=localhost \
     CARLA_PORT=2001
+
+# ── ROS 2 Humble apt repository ───────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    gnupg2 \
+    lsb-release \
+    software-properties-common \
+    && rm -rf /var/lib/apt/lists/* \
+ && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+    -o /usr/share/keyrings/ros-archive-keyring.gpg \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
+    http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" \
+    > /etc/apt/sources.list.d/ros2.list
 
 # ── System + ROS2 packages ─────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -27,11 +40,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxmu6 \
     # General tools
     wget \
-    curl \
     git \
     cmake \
     build-essential \
-    software-properties-common \
+    # ROS2 base runtime
+    ros-${ROS_DISTRO}-ros-base \
     # ROS2 core + bridge dependencies
     ros-${ROS_DISTRO}-vision-opencv \
     ros-${ROS_DISTRO}-image-transport \

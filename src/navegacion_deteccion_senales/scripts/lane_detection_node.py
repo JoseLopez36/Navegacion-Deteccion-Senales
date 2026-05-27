@@ -73,9 +73,9 @@ class LaneDetectionNode(Node):
         self._latest_frame = None
         self.create_subscription(Image, self.image_topic, self._on_image, sensor_qos)
 
-        # Procesa el último frame disponible a 1 Hz (1000 ms)
-        self.create_timer(1.0, self._process_latest_frame)
-        self.get_logger().info('lane_detection_node iniciado (1 Hz, CPU).')
+        # Procesa el último frame disponible cada 0.1 segundos (10 Hz)
+        self.create_timer(0.1, self._process_latest_frame)
+        self.get_logger().info('lane_detection_node iniciado.')
 
     # ------------------------------------------------------------------
     # Callbacks
@@ -98,7 +98,7 @@ class LaneDetectionNode(Node):
         
         try:
             t0 = time.time()
-            state = ld.detect_lane_state(frame, roi_start=0.55)
+            state = ld.detect_lane_state(frame, roi_start=0.5)
             inference_ms = (time.time() - t0) * 1000.0
 
             # 4. Publicar error lateral
@@ -114,7 +114,6 @@ class LaneDetectionNode(Node):
             self.get_logger().info(
                 f"Inference: {inference_ms:.1f} ms | "
                 f"Error: {state['offset_px']:+.1f} px | "
-                f"Steering: {state['steering']:+.3f} | "
                 f"Zone: {state['zone']} | "
                 f"Left: {state['left_detected']} Right: {state['right_detected']}"
             )
