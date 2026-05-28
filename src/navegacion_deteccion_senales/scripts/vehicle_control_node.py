@@ -15,6 +15,7 @@ class VehicleControlNode(Node):
     Suscripciones:
       - /lane_detection/lane_error          (std_msgs/Float32)              — error lateral en metros
       - /carla/ego_vehicle/speedometer      (std_msgs/Float32)
+      - /sign_detection/speed_limit         (std_msgs/Float32)              — límite de velocidad de señal (m/s), -1 si no aplica
 
     Publicaciones:
       - /carla/ego_vehicle/vehicle_control_cmd (carla_msgs/CarlaEgoVehicleControl)
@@ -37,6 +38,7 @@ class VehicleControlNode(Node):
         self.declare_parameter('lane_error_topic', '/lane_detection/lane_error')
         self.declare_parameter('speedometer_topic', '/carla/ego_vehicle/speedometer')
         self.declare_parameter('vehicle_control_topic', '/carla/ego_vehicle/vehicle_control_cmd')
+        self.declare_parameter('speed_limit_topic', '/sign_detection/speed_limit')
 
         self.control_rate         = float(self.get_parameter('control_rate').value)
         self.target_speed         = float(self.get_parameter('target_speed').value)
@@ -48,9 +50,10 @@ class VehicleControlNode(Node):
         self.kp_steering          = float(self.get_parameter('kp_steering').value)
         self.ki_steering          = float(self.get_parameter('ki_steering').value)
         self.kd_steering          = float(self.get_parameter('kd_steering').value)
-        self.lane_error_topic     = self.get_parameter('lane_error_topic').value
-        self.speedometer_topic    = self.get_parameter('speedometer_topic').value
+        self.lane_error_topic      = self.get_parameter('lane_error_topic').value
+        self.speedometer_topic     = self.get_parameter('speedometer_topic').value
         self.vehicle_control_topic = self.get_parameter('vehicle_control_topic').value
+        self.speed_limit_topic     = self.get_parameter('speed_limit_topic').value
 
         # --- QoS ---
         sensor_qos = QoSProfile(
@@ -101,6 +104,12 @@ class VehicleControlNode(Node):
             self._on_speedometer,
             sensor_qos,
         )
+        self.create_subscription(
+            Float32,
+            self.speed_limit_topic,
+            self._on_speed_limit,
+            reliable_qos,
+        )
 
         # --- Timer de control ---
         self.create_timer(1.0 / self.control_rate, self._control_loop)
@@ -116,6 +125,10 @@ class VehicleControlNode(Node):
 
     def _on_speedometer(self, msg: Float32):
         self.current_speed = msg.data
+
+    def _on_speed_limit(self, msg: Float32):
+        if msg.data >= 0.0:
+            self.speed_limit = msg.data
 
     # ------------------------------------------------------------------
     # Bucle de control

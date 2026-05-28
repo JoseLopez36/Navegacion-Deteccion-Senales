@@ -24,6 +24,9 @@ class AnnotationGeneratorNode(Node):
       - /lane_detection/lane_state               (std_msgs/String)                — JSON con líneas y estado
       - /carla/ego_vehicle/speedometer           (std_msgs/Float32)               — velocidad actual
       - /carla/ego_vehicle/vehicle_control_cmd   (carla_msgs/CarlaEgoVehicleControl) — comandos de control
+      - /sign_detection/sign_label              (std_msgs/String)                — etiqueta de la señal detectada
+      - /sign_detection/speed_limit             (std_msgs/Float32)               — límite de velocidad (m/s)
+      - /sign_detection/bbox                    (std_msgs/String)                — JSON con bbox {x,y,w,h}
 
     Publicaciones:
       - /foxglove/annotations  (foxglove_msgs/ImageAnnotations)  — anotaciones para Foxglove
@@ -39,6 +42,9 @@ class AnnotationGeneratorNode(Node):
         self.declare_parameter('annotations_topic', '/foxglove/annotations')
         self.declare_parameter('speedometer_topic',  '/carla/ego_vehicle/speedometer')
         self.declare_parameter('vehicle_control_topic', '/carla/ego_vehicle/vehicle_control_cmd')
+        self.declare_parameter('sign_label_topic', '/sign_detection/sign_label')
+        self.declare_parameter('speed_limit_topic', '/sign_detection/speed_limit')
+        self.declare_parameter('sign_bbox_topic', '/sign_detection/bbox')
         self.declare_parameter('image_width',  800)
         self.declare_parameter('image_height', 600)
 
@@ -48,6 +54,9 @@ class AnnotationGeneratorNode(Node):
         self.annotations_topic      = self.get_parameter('annotations_topic').value
         self.speedometer_topic      = self.get_parameter('speedometer_topic').value
         self.vehicle_control_topic  = self.get_parameter('vehicle_control_topic').value
+        self.sign_label_topic       = self.get_parameter('sign_label_topic').value
+        self.speed_limit_topic      = self.get_parameter('speed_limit_topic').value
+        self.sign_bbox_topic        = self.get_parameter('sign_bbox_topic').value
         self.image_width            = int(self.get_parameter('image_width').value)
         self.image_height           = int(self.get_parameter('image_height').value)
 
@@ -72,6 +81,9 @@ class AnnotationGeneratorNode(Node):
         self.cmd_throttle  = 0.0
         self.cmd_brake     = 0.0
         self.cmd_steer     = 0.0
+        self.sign_label    = 'none'
+        self.sign_speed_ms = -1.0
+        self.sign_bbox: dict = {}
 
         # --- Publicadores ---
         self.annotations_pub = self.create_publisher(
@@ -88,6 +100,9 @@ class AnnotationGeneratorNode(Node):
         self.create_subscription(
             CarlaEgoVehicleControl, self.vehicle_control_topic,
             self._on_vehicle_control, reliable_qos)
+        self.create_subscription(String,  self.sign_label_topic,      self._on_sign_label,     reliable_qos)
+        self.create_subscription(Float32, self.speed_limit_topic,     self._on_sign_speed,     reliable_qos)
+        self.create_subscription(String,  self.sign_bbox_topic,       self._on_sign_bbox,      reliable_qos)
 
         self.get_logger().info('annotation_generator_node iniciado.')
 
@@ -111,6 +126,18 @@ class AnnotationGeneratorNode(Node):
         self.cmd_throttle = msg.throttle
         self.cmd_brake    = msg.brake
         self.cmd_steer    = msg.steer
+
+    def _on_sign_label(self, msg: String):
+        self.sign_label = msg.data
+
+    def _on_sign_speed(self, msg: Float32):
+        self.sign_speed_ms = msg.data
+
+    def _on_sign_bbox(self, msg: String):
+        try:
+            self.sign_bbox = json.loads(msg.data)
+        except json.JSONDecodeError:
+            self.sign_bbox = {}
 
     # ------------------------------------------------------------------
     # Callback principal: se ejecuta por cada frame de cámara
@@ -239,6 +266,32 @@ class AnnotationGeneratorNode(Node):
             fill=(1.0, 1.0, 1.0, 0.8))
         ego.points.append(self._point2(cx, y_dev))
         ann.points.append(ego)
+
+        # ── Señal de tráfico: bounding box + etiqueta ──────────────────
+        bbox = self.sign_bbox
+        if bbox and self.sign_label not in ('none', ''):
+            bx = float(bbox.get('x', 0))
+            by = float(bbox.get('y', 0))
+            bw = float(bbox.get('w', 0))
+            bh = float(bbox.get('h', 0))
+            box = self._points_annotation(
+                stamp, PointsAnnotation.LINE_LOOP, 3.0,
+                outline=(1.0, 0.3, 0.0, 1.0),
+                fill=(1.0, 0.3, 0.0, 0.08))
+            box.points.extend([
+                self._point2(bx,      by),
+                self._point2(bx + bw, by),
+                self._point2(bx + bw, by + bh),
+                self._point2(bx,      by + bh)])
+            ann.points.append(box)
+
+            speed_kmh_sign = self.sign_speed_ms * 3.6 if self.sign_speed_ms >= 0 else -1.0
+            speed_str  = f'{speed_kmh_sign:.0f} km/h' if speed_kmh_sign >= 0 else ''
+            label_str  = self.sign_label.replace('_', ' ').upper()
+            ann.texts.append(self._text_annotation(
+                stamp, bx, max(0.0, by - 22.0),
+                f'{label_str}  {speed_str}', 16.0,
+                (1.0, 0.4, 0.0, 1.0)))
 
         # ── HUD izquierdo: estado del carril ────────────────────────────
         ann.texts.append(self._text_annotation(

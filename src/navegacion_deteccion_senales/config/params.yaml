@@ -15,6 +15,7 @@ vehicle_control_node:
     lane_error_topic: /lane_detection/lane_error
     speedometer_topic: /carla/ego_vehicle/speedometer
     vehicle_control_topic: /carla/ego_vehicle/vehicle_control_cmd
+    speed_limit_topic: /sign_detection/speed_limit
 
 lane_detection_node:
   ros__parameters:
@@ -29,14 +30,18 @@ sign_detection_node:
     image_topic: /carla/ego_vehicle/rgb_front/image
     sign_label_topic: /sign_detection/sign_label
     speed_limit_topic: /sign_detection/speed_limit
-    model_path: ''
+    sign_bbox_topic: /sign_detection/bbox
+    sign_mask_topic: /sign_detection/mask
+    model_path: /home/ros/workspace/src/navegacion_deteccion_senales/models/sign_model.pth
 
 annotation_generator_node:
   ros__parameters:
     image_topic: /carla/ego_vehicle/rgb_front/image
     lane_error_topic: /lane_detection/lane_error
+    lane_state_topic: /lane_detection/lane_state
     sign_label_topic: /sign_detection/sign_label
     speed_limit_topic: /sign_detection/speed_limit
+    sign_bbox_topic: /sign_detection/bbox
     annotations_topic: /foxglove/annotations
     image_width: 800
     image_height: 600
