@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
 make_lane_video.py  —  genera un vídeo .mp4 del detector de carriles
-                       sobre las imágenes del dataset sintético de CARLA.
+                       sobre las imágenes de un dataset.
 
 Uso:
-    python3 tools/make_lane_video.py dataset/lanes/images
-    python3 tools/make_lane_video.py dataset/lanes/images -o output/demo.mp4 --fps 10
+    python3 tools/make_lane_video.py dataset/lanes/images /path/to/lane_model.onnx
+    python3 tools/make_lane_video.py dataset/lanes/images /path/to/lane_model.onnx \\
+        -o output/demo.mp4 --fps 10
 """
 
 import argparse
@@ -18,22 +19,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent /
                        "src" / "navegacion_deteccion_senales" / "scripts"))
-from lane_detection import LaneConfig, LaneDetector
+from lane_detection import LaneDetector
 
-
-# ── Parámetros por defecto (mismos que params.yaml) ───────────────────────────
-DEFAULT_CFG = LaneConfig(
-    canny_low        = 50,
-    canny_high       = 150,
-    hough_rho        = 2,
-    hough_threshold  = 50,
-    hough_min_len    = 40,
-    hough_max_gap    = 100,
-    min_slope        = 0.6,
-    smoothing        = 8,
-    horizon          = 0.5,
-    center_threshold = 0.20,
-)
 
 # ── Colores BGR ────────────────────────────────────────────────────────────────
 _LEFT_COLOR   = (0,   217, 255)   # amarillo
@@ -42,12 +29,6 @@ _POLY_COLOR   = (0,   255, 102)   # verde
 _DEV_COLOR    = (0,   255, 255)   # amarillo
 _DOT_COLOR    = (0,   255, 255)
 _EGO_COLOR    = (255, 255, 255)
-_ZONE_COLORS  = {
-    'CENTER':  (0,   255, 102),
-    'LEFT':    (64,   64, 255),
-    'RIGHT':   (64,   64, 255),
-    'UNKNOWN': (140, 140, 140),
-}
 
 
 def _draw_line(frame, pt1, pt2, color, thickness=4):
@@ -60,19 +41,17 @@ def _draw_filled_poly(frame, pts, color, alpha=0.12):
     cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
 
 
-def _draw_hud(frame, state, idx, total):
+def _draw_hud(frame, state: dict, offset: float, idx: int, total: int):
     h, w = frame.shape[:2]
 
-    zone_color = _ZONE_COLORS.get(state.zone, (255, 255, 255))
+    left_det  = state.get('left')  is not None
+    right_det = state.get('right') is not None
 
     # HUD izquierdo
-    cv2.putText(frame, f"Zona: {state.zone}", (12, 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7, zone_color, 2, cv2.LINE_AA)
-    cv2.putText(frame, f"Offset: {state.offset_px:+d} px", (12, 56),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1, cv2.LINE_AA)
-    cv2.putText(frame, f"Lateral: {state.lateral:.2f}  "
-                       f"L:{int(state.left_detected)} R:{int(state.right_detected)}",
-                (12, 78), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (160, 160, 160), 1, cv2.LINE_AA)
+    cv2.putText(frame, f"Offset: {offset:+.1f} px", (12, 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2, cv2.LINE_AA)
+    cv2.putText(frame, f"L:{int(left_det)}  R:{int(right_det)}",
+                (12, 56), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (160, 160, 160), 1, cv2.LINE_AA)
 
     # Contador de frame (esquina inferior derecha)
     label = f"{idx + 1}/{total}"
@@ -86,16 +65,18 @@ def render_frame(frame: np.ndarray, detector: LaneDetector, idx: int, total: int
     h, w = out.shape[:2]
     cx = w // 2
 
-    left, right = detector._detect(frame, h, w)
-    state       = detector._analyze(w, left, right)
+    offset, state, _mask = detector.detect_lane_state(frame)
+
+    left  = state.get('left')
+    right = state.get('right')
 
     # Polígono de carril
     if left and right:
         pts = [
-            (left[0],  left[1]),
-            (left[2],  left[3]),
-            (right[2], right[3]),
-            (right[0], right[1]),
+            (int(left[0]),  int(left[1])),
+            (int(left[2]),  int(left[3])),
+            (int(right[2]), int(right[3])),
+            (int(right[0]), int(right[1])),
         ]
         _draw_filled_poly(out, pts, _POLY_COLOR, alpha=0.15)
         cv2.polylines(out, [np.array(pts, dtype=np.int32)],
@@ -103,20 +84,19 @@ def render_frame(frame: np.ndarray, detector: LaneDetector, idx: int, total: int
 
     # Líneas de carril
     if left:
-        _draw_line(out, (left[0],  left[1]),  (left[2],  left[3]),  _LEFT_COLOR,  5)
+        _draw_line(out, (int(left[0]),  int(left[1])),  (int(left[2]),  int(left[3])),  _LEFT_COLOR,  5)
     if right:
-        _draw_line(out, (right[0], right[1]), (right[2], right[3]), _RIGHT_COLOR, 5)
+        _draw_line(out, (int(right[0]), int(right[1])), (int(right[2]), int(right[3])), _RIGHT_COLOR, 5)
 
     # Línea de desviación
-    offset_px     = float(state.offset_px)
-    lane_center_x = int(cx - offset_px)
+    lane_center_x = int(cx + offset)
     y_dev         = int(h * 0.72)
 
     _draw_line(out, (cx, y_dev), (lane_center_x, y_dev), _DEV_COLOR, 2)
-    cv2.circle(out, (lane_center_x, y_dev), 6, _DOT_COLOR,   -1, cv2.LINE_AA)
-    cv2.circle(out, (cx,           y_dev), 6, _EGO_COLOR,   -1, cv2.LINE_AA)
+    cv2.circle(out, (lane_center_x, y_dev), 6, _DOT_COLOR, -1, cv2.LINE_AA)
+    cv2.circle(out, (cx,           y_dev), 6, _EGO_COLOR,  -1, cv2.LINE_AA)
 
-    _draw_hud(out, state, idx, total)
+    _draw_hud(out, state, offset, idx, total)
     return out
 
 
@@ -124,7 +104,9 @@ def main():
     parser = argparse.ArgumentParser(
         description="Genera un vídeo .mp4 del detector de carriles sobre el dataset.")
     parser.add_argument("images_dir",
-                        help="Directorio con las imágenes .jpg del dataset")
+                        help="Directorio con las imágenes .jpg/.png del dataset")
+    parser.add_argument("model_path",
+                        help="Ruta al modelo ONNX de segmentación de carriles")
     parser.add_argument("-o", "--output", default=None,
                         help="Fichero de salida (default: <images_dir>/../lane_demo.mp4)")
     parser.add_argument("--fps", type=float, default=10.0,
@@ -141,7 +123,7 @@ def main():
         print(f"ERROR: no se encontraron imágenes en {images_dir}", file=sys.stderr)
         sys.exit(1)
 
-    output = Path(args.output) if args.output else images_dir.parent / "lane_demo.mp4"
+    output = Path(args.output) if args.output else images_dir.parent / "lane_demo.avi"
     output.parent.mkdir(parents=True, exist_ok=True)
 
     # Leer primer frame para determinar resolución
@@ -151,10 +133,28 @@ def main():
         sys.exit(1)
     h, w = first.shape[:2]
 
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    writer = cv2.VideoWriter(str(output), fourcc, args.fps, (w, h))
+    # VideoWriter con fallback - preferir H.264 para compatibilidad WhatsApp
+    _candidates = [
+        (cv2.VideoWriter_fourcc(*"avc1"), str(output.with_suffix(".mp4"))),   # H.264 (WhatsApp compatible)
+        (cv2.VideoWriter_fourcc(*"mp4v"), str(output.with_suffix(".mp4"))),   # MPEG-4 fallback
+        (cv2.VideoWriter_fourcc(*"XVID"), str(output.with_suffix(".avi"))),   # Último recurso
+    ]
+    writer = None
+    out_path = None
+    for fourcc, out_str in _candidates:
+        w_test = cv2.VideoWriter(out_str, fourcc, args.fps, (w, h))
+        if w_test.isOpened():
+            writer = w_test
+            out_path = out_str
+            break
+        w_test.release()
+    if writer is None:
+        print("ERROR: no se pudo abrir ningún VideoWriter. "
+              "Instala libavcodec o libxvidcore.", file=sys.stderr)
+        sys.exit(1)
+    output = Path(out_path)
 
-    detector = LaneDetector(cfg=DEFAULT_CFG)
+    detector = LaneDetector(model_path=args.model_path)
     total    = len(images)
 
     print(f"Procesando {total} imágenes → {output}  ({w}x{h} @ {args.fps} fps)")
