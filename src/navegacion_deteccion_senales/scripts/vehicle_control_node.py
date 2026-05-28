@@ -82,6 +82,10 @@ class VehicleControlNode(Node):
         self._steering_integral  = 0.0
         self._steering_prev_err  = 0.0
 
+        # --- Filtro paso-bajo para error de carril ---
+        self._steering_error_filtered = 0.0
+        self._steering_filter_alpha = 0.05  # Filtro suave
+
         self._prev_time = self.get_clock().now()
 
         # --- Publicadores ---
@@ -188,7 +192,11 @@ class VehicleControlNode(Node):
         Convención de signo:
           lane_error > 0 → vehículo desplazado a la derecha → girar izquierda (steer < 0)
         """
-        error = -self.lane_error
+        # Aplicar filtro paso-bajo al error de carril
+        error_raw = self.lane_error
+        self._steering_error_filtered = (self._steering_filter_alpha * error_raw
+                                         + (1.0 - self._steering_filter_alpha) * self._steering_error_filtered)
+        error = self._steering_error_filtered
 
         self._steering_integral += error * dt
         self._steering_integral  = max(-10.0, min(10.0, self._steering_integral))  # anti-windup

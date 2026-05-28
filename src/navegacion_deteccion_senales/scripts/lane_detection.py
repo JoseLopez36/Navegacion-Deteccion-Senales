@@ -75,10 +75,10 @@ class LaneDetector:
         """
         orig_h, orig_w = frame.shape[:2]
 
-        # ROI: mitad inferior (55% vertical) y franja central (25%–75% horizontal)
+        # ROI: mitad inferior y franja central
         roi_y0 = int(orig_h * 0.55)
-        roi_x0 = int(orig_w * 0.25)
-        roi_x1 = int(orig_w * 0.75)
+        roi_x0 = int(orig_w * 0.05)
+        roi_x1 = int(orig_w * 0.95)
         roi_crop = frame[roi_y0:, roi_x0:roi_x1]
 
         # Predecir máscara sobre el recorte ROI
@@ -124,6 +124,25 @@ class LaneDetector:
         left_detected  = _scale_line(left_line)
         right_detected = _scale_line(right_line)
 
+        # Filtrar líneas por inclinación (descartar carriles lejanos demasiado empinados)
+        # La pendiente máxima tolerada (dx/dy) para carriles del propio carril
+        MAX_LANE_SLOPE = 1.5  # Aproximadamente 56 grados, carriles lejanos son más verticales
+
+        def _is_valid_slope(line):
+            if line is None:
+                return False
+            x_top, y_top, x_bottom, y_bottom = line
+            dy = y_bottom - y_top
+            if abs(dy) < 1e-6:
+                return False
+            slope = abs((x_bottom - x_top) / dy)
+            return slope <= MAX_LANE_SLOPE
+
+        if not _is_valid_slope(left_detected):
+            left_detected = None
+        if not _is_valid_slope(right_detected):
+            right_detected = None
+
         # Actualizar _prev_state solo con líneas realmente detectadas en este frame
         if left_detected is not None:
             if self._prev_state is None:
@@ -138,18 +157,19 @@ class LaneDetector:
         left_line  = left_detected  if left_detected  is not None else (self._prev_state or {}).get('left')
         right_line = right_detected if right_detected is not None else (self._prev_state or {}).get('right')
 
-        # Calcular offset en espacio original usando solo líneas detectadas en este frame
+        # Calcular offset lateral usando las líneas detectadas en el punto de control (parte inferior)
         orig_center_x = orig_w / 2.0
         offset = 0.0
-        left_x  = float(np.mean(xs[left_mask]))  * scale_x + roi_x0 if left_detected  is not None else None
-        right_x = float(np.mean(xs[right_mask])) * scale_x + roi_x0 if right_detected is not None else None
+
+        # Extraer posición x de cada línea en el punto de control (índice 2 = x_bottom)
+        left_x = left_detected[2] if left_detected is not None else None
+        right_x = right_detected[2] if right_detected is not None else None
+
+        # Calcular el offset lateral
         if left_x is not None and right_x is not None:
+            # Centro del carril = punto medio entre líneas
             lane_center = (left_x + right_x) / 2.0
             offset = lane_center - orig_center_x
-        elif left_x is not None:
-            offset = left_x - orig_center_x + 30 * scale_x
-        elif right_x is not None:
-            offset = right_x - orig_center_x - 30 * scale_x
 
         state = {
             'image_width': orig_w,
@@ -187,10 +207,61 @@ class LaneDetector:
         if len(points) < 4:
             return None
         pts = np.array(points, dtype=np.float32)
-        m, b = np.polyfit(pts[:, 1], pts[:, 0], 1)
+
+        # Create binary image from points for Hough transform
+        x_min, x_max = int(pts[:, 0].min()), int(pts[:, 0].max())
+        y_min, y_max = int(pts[:, 1].min()), int(pts[:, 1].max())
+        w_img = x_max - x_min + 1
+        h_img = y_max - y_min + 1
+
+        if w_img < 2 or h_img < 2:
+            return None
+
+        binary = np.zeros((h_img, w_img), dtype=np.uint8)
+        for x, y in pts:
+            binary[int(y - y_min), int(x - x_min)] = 255
+
+        # Hough Transform to detect dominant line
+        lines = cv2.HoughLinesP(binary, rho=1, theta=np.pi/180,
+                                threshold=10, minLineLength=max(h_img, w_img)//4,
+                                maxLineGap=5)
+
+        if lines is None or len(lines) == 0:
+            # Fallback to polyfit if Hough fails
+            m, b = np.polyfit(pts[:, 1], pts[:, 0], 1)
+            if abs(m) > max_slope:
+                return None
+            return [float(m * y_top + b), float(y_top), float(m * y_bottom + b), float(y_bottom)]
+
+        # Select dominant line (longest)
+        best_line = None
+        best_length = 0
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+            length = np.hypot(x2 - x1, y2 - y1)
+            if length > best_length:
+                best_length = length
+                best_line = (x1 + x_min, y1 + y_min, x2 + x_min, y2 + y_min)
+
+        if best_line is None:
+            return None
+
+        x1, y1, x2, y2 = best_line
+        dx = x2 - x1
+        dy = y2 - y1
+
+        if abs(dy) < 1e-6:
+            return None
+
+        m = dx / dy
         if abs(m) > max_slope:
             return None
-        return [float(m * y_top + b), float(y_top), float(m * y_bottom + b), float(y_bottom)]
+
+        # Extend line to y_top and y_bottom
+        x_top = x1 + m * (y_top - y1)
+        x_bottom = x1 + m * (y_bottom - y1)
+
+        return [float(x_top), float(y_top), float(x_bottom), float(y_bottom)]
 
     @staticmethod
     def _empty_state(width: int, height: int) -> dict:

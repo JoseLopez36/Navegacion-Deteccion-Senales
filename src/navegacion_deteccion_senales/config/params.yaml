@@ -1,16 +1,16 @@
 vehicle_control_node:
   ros__parameters:
-    control_rate: 20.0          # Hz
+    control_rate: 10.0          # Hz - menor frecuencia para respuesta más suave
     max_steer: 1.0              # normalizado CARLA [-1, 1]
     max_steer_rad: 0.6          # ángulo físico máximo del volante [rad] (~34°)
     kp_throttle: 0.3            # P sobre error de velocidad
     ki_throttle: 0.05           # I sobre error de velocidad
 
     # Parámetros de control (18 km/h)
-    target_speed: 5.0           # m/s (18 km/h)
-    kp_steering: 0.05          # [rad/m]
-    ki_steering: 0.005           # [rad/(m·s)]
-    kd_steering: 0.0            # [rad·s/m]
+    target_speed: 5.0          # m/s (18 km/h)
+    kp_steering: 0.2           # [rad/m]
+    ki_steering: 0.01          # [rad/(m·s)]
+    kd_steering: 0.10          # [rad·s/m]
 
     lane_error_topic: /lane_detection/lane_error
     speedometer_topic: /carla/ego_vehicle/speedometer

@@ -45,6 +45,7 @@ class LaneDetectionNode(Node):
         self.declare_parameter('lane_state_topic', '/lane_detection/lane_state')
         self.declare_parameter('lane_mask_topic', '/lane_detection/mask')
         self.declare_parameter('model_path', '/home/jose-lopez/Documents/WORKSPACE/Cuatrimestre_2/Percepcion_Automatica_Robotica/Navegacion-Deteccion-Senales/src/navegacion_deteccion_senales/models/lane_model.onnx')
+        self.declare_parameter('camera_height_m', 1.5)
 
         self.image_topic       = self.get_parameter('image_topic').value
         self.camera_info_topic  = self.get_parameter('camera_info_topic').value
@@ -52,6 +53,7 @@ class LaneDetectionNode(Node):
         self.lane_state_topic  = self.get_parameter('lane_state_topic').value
         self.lane_mask_topic   = self.get_parameter('lane_mask_topic').value
         self.model_path        = self.get_parameter('model_path').value
+        self._camera_height_m  = float(self.get_parameter('camera_height_m').value)
 
         # --- QoS ---
         sensor_qos = QoSProfile(
@@ -69,6 +71,8 @@ class LaneDetectionNode(Node):
 
         # --- Intrínsecos de la cámara ---
         self._fx = None  # focal length en píxeles; None hasta recibir camera_info
+        self._fy = None
+        self._cy = None
 
         # --- Utilidades ---
         self.bridge = CvBridge()
@@ -86,8 +90,8 @@ class LaneDetectionNode(Node):
         self.create_subscription(Image, self.image_topic, self._on_image, sensor_qos)
         self.create_subscription(CameraInfo, self.camera_info_topic, self._on_camera_info, sensor_qos)
 
-        # Procesa el último frame disponible cada 0.2 segundos (5 Hz)
-        self.create_timer(0.2, self._process_latest_frame)
+        # Procesa el último frame disponible cada 0.1 segundos (10 Hz)
+        self.create_timer(0.1, self._process_latest_frame)
         self.get_logger().info('lane_detection_node iniciado.')
 
     # ------------------------------------------------------------------
@@ -97,7 +101,11 @@ class LaneDetectionNode(Node):
     def _on_camera_info(self, msg: CameraInfo):
         if self._fx is None:
             self._fx = msg.k[0]  # K = [fx, 0, cx, 0, fy, cy, 0, 0, 1]
-            self.get_logger().info(f'camera_info recibido: fx={self._fx:.2f} px')
+            self._fy = msg.k[4]
+            self._cy = msg.k[5]
+            self.get_logger().info(
+                f'camera_info recibido: fx={self._fx:.2f} fy={self._fy:.2f} cy={self._cy:.2f} px'
+            )
             
     def _on_image(self, msg: Image):
         """Almacena el frame más reciente."""
@@ -119,12 +127,21 @@ class LaneDetectionNode(Node):
 
             # Publicar error lateral
             error_msg = Float32()
-            # Convertir a metros si ya se recibió camera_info
-            if self._fx is not None and self._fx > 0.0:
-                error_m = error / self._fx
+            # Convertir a metros usando geometría de cámara pinhole:
+            #   Z = camera_height * fy / (y_ref - cy)  con y_ref = fila inferior del ROI
+            #   error_m = offset_px * Z / fx
+            if self._fx is not None and self._fy is not None and self._cy is not None:
+                orig_h, orig_w = frame.shape[:2]
+                y_ref = orig_h * 0.95  # fila de referencia (cerca del vehículo)
+                denom = y_ref - self._cy
+                if abs(denom) > 1.0:
+                    Z = self._camera_height_m * self._fy / denom
+                    error_m = error * Z / self._fx
+                else:
+                    error_m = error / self._fx
             else:
                 error_m = error  # fallback hasta recibir camera_info
-            error_msg.data = error_m
+            error_msg.data = float(error_m)
             self.error_pub.publish(error_msg)
 
             # Publicar estado del carril en JSON
