@@ -8,8 +8,8 @@ vehicle_control_node:
 
     # Parámetros de control (18 km/h)
     target_speed: 5.0           # m/s (18 km/h)
-    kp_steering: 0.132          # [rad/m]
-    ki_steering: 0.05           # [rad/(m·s)]
+    kp_steering: 0.05          # [rad/m]
+    ki_steering: 0.005           # [rad/(m·s)]
     kd_steering: 0.0            # [rad·s/m]
 
     lane_error_topic: /lane_detection/lane_error
@@ -28,11 +28,16 @@ lane_detection_node:
 sign_detection_node:
   ros__parameters:
     image_topic: /carla/ego_vehicle/rgb_front/image
+    rgb_camera_info_topic: /carla/ego_vehicle/rgb_front/camera_info
+    semantic_topic: /carla/ego_vehicle/semantic_segmentation_front/image
+    semantic_camera_info_topic: /carla/ego_vehicle/semantic_segmentation_front/camera_info
     sign_label_topic: /sign_detection/sign_label
     speed_limit_topic: /sign_detection/speed_limit
     sign_bbox_topic: /sign_detection/bbox
     sign_mask_topic: /sign_detection/mask
     model_path: /home/ros/workspace/src/navegacion_deteccion_senales/models/sign_model.pth
+    min_sign_area: 100
+    max_sign_area: 50000
 
 annotation_generator_node:
   ros__parameters:
