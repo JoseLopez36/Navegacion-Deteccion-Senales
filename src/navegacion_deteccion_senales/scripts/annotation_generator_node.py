@@ -241,22 +241,10 @@ class AnnotationGeneratorNode(Node):
         ann.points.append(ego)
 
         # ── HUD izquierdo: estado del carril ────────────────────────────
-        zone    = s.get('zone', 'UNKNOWN')
-        lateral = s.get('lateral', 0.5)
-        l_det   = int(s.get('left_detected',  False))
-        r_det   = int(s.get('right_detected', False))
-        zone_color = self._ZONE_COLOR.get(zone, (1.0, 1.0, 1.0, 1.0))
-
-        ann.texts.append(self._text_annotation(
-            stamp, 12.0, 28.0, f'Zona: {zone}', 22.0, zone_color))
         ann.texts.append(self._text_annotation(
             stamp, 12.0, 54.0,
             f'Error: {self.lane_error:+.4f} m  ({int(error):+d} px)', 17.0,
             (1.0, 1.0, 0.0, 1.0)))
-        ann.texts.append(self._text_annotation(
-            stamp, 12.0, 76.0,
-            f'Lateral: {lateral:.2f}   L:{l_det}  R:{r_det}', 15.0,
-            (0.65, 0.65, 0.65, 1.0)))
 
         # ── HUD derecho: estado del control ─────────────────────────────
         speed_kmh = self.current_speed * 3.6

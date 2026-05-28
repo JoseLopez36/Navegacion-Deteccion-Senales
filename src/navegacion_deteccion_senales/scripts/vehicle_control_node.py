@@ -175,7 +175,7 @@ class VehicleControlNode(Node):
         Convención de signo:
           lane_error > 0 → vehículo desplazado a la derecha → girar izquierda (steer < 0)
         """
-        error = -self.lane_error  # negado: error positivo → corrección hacia la izquierda
+        error = self.lane_error
 
         self._steering_integral += error * dt
         self._steering_integral  = max(-10.0, min(10.0, self._steering_integral))  # anti-windup

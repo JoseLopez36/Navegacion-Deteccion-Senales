@@ -29,6 +29,7 @@ class LaneDetector:
         self._session = self.load_model(model_path)
         self._input_name = self._session.get_inputs()[0].name
         self._input_shape = self._session.get_inputs()[0].shape
+        self._prev_state: dict | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -65,119 +66,103 @@ class LaneDetector:
 
         return pred_mask.astype(np.float32)
 
-    def detect_lane_state(self, frame: np.ndarray, roi_start: float = 0.55) -> dict:
+    def detect_lane_state(self, frame: np.ndarray) -> dict:
         """
-        Detecta el estado del carril usando el modelo ONNX para segmentación + Hough.
-        Si la máscara del modelo es demasiado escasa, usa HSV como fallback.
+        Detecta el estado del carril usando el modelo ONNX para segmentación.
 
         Returns:
-            (error_px, state_dict, mask_uint8)
+            (offset, state, mask)
         """
-        h, w = frame.shape[:2]
-        y_top = int(h * roi_start)
-        y_bottom = int(h * 0.92)
+        orig_h, orig_w = frame.shape[:2]
 
-        pred = self.predict_lane(frame)
-        if pred.ndim == 3:
-            pred = pred[:, :, 0]
-        mask_full = cv2.resize(pred, (w, h), interpolation=cv2.INTER_LINEAR)
-        model_mask = (mask_full > 0.5).astype(np.uint8) * 255
+        # ROI: mitad inferior (55% vertical) y franja central (25%–75% horizontal)
+        roi_y0 = int(orig_h * 0.55)
+        roi_x0 = int(orig_w * 0.25)
+        roi_x1 = int(orig_w * 0.75)
+        roi_crop = frame[roi_y0:, roi_x0:roi_x1]
 
-        # Fallback a HSV si el modelo detecta menos del 1 % del ROI
-        min_pixels = int(w * h * 0.01)
-        if int(np.count_nonzero(model_mask)) < min_pixels:
-            mask = self._hsv_mask(frame)
+        # Predecir máscara sobre el recorte ROI
+        mask = self.predict_lane(roi_crop)
+
+        # Factores de escala: máscara → recorte ROI → imagen original
+        crop_h = orig_h - roi_y0
+        crop_w = roi_x1 - roi_x0
+        h, w = mask.shape[:2]
+        scale_x = crop_w / w
+        scale_y = crop_h / h
+
+        # Binarizar máscara (aplanar si es 3D)
+        if mask.ndim == 3:
+            binary = (mask[:, :, 0] > 0.5).astype(np.uint8)
         else:
-            mask = model_mask
+            binary = (mask > 0.5).astype(np.uint8)
 
-        roi = np.zeros_like(mask)
-        polygon = np.array([[
-            (int(w * 0.15), y_bottom),
-            (int(w * 0.42), y_top),
-            (int(w * 0.58), y_top),
-            (int(w * 0.85), y_bottom),
-        ]], dtype=np.int32)
-        cv2.fillPoly(roi, polygon, 255)
-        mask = cv2.bitwise_and(mask, roi)
+        # Obtener coordenadas de píxeles del carril en espacio de máscara
+        ys, xs = np.where(binary > 0)
 
-        kernel = np.ones((3, 3), np.uint8)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-        edges = cv2.Canny(mask, 50, 150)
-        lines = cv2.HoughLinesP(
-            edges,
-            rho=1,
-            theta=np.pi / 180,
-            threshold=25,
-            minLineLength=max(25, w // 20),
-            maxLineGap=max(20, w // 30),
-        )
+        if len(xs) == 0:
+            return 0.0, self._empty_state(orig_w, orig_h), mask
 
-        if lines is None:
-            return 0.0, self._empty_state(w, h), mask
+        # Ajustar líneas en espacio de máscara y reescalar al espacio original
+        center_x = w // 2
+        y_top    = 0
+        y_bottom = int(h * 0.95)
 
-        left_points, right_points = [], []
-        center_x = w * 0.5
+        left_mask  = xs < center_x
+        right_mask = xs >= center_x
 
-        for x1, y1, x2, y2 in lines[:, 0].astype(float):
-            dx = x2 - x1
-            if abs(dx) < 1.0:
-                continue
-            slope = (y2 - y1) / dx
-            if abs(slope) < 0.3:
-                continue
-            x_mean = (x1 + x2) * 0.5
-            if x_mean < center_x:
-                left_points.extend([(x1, y1), (x2, y2)])
-            else:
-                right_points.extend([(x1, y1), (x2, y2)])
+        left_line  = self._fit_line(list(zip(xs[left_mask],  ys[left_mask])),  y_top, y_bottom) if np.any(left_mask)  else None
+        right_line = self._fit_line(list(zip(xs[right_mask], ys[right_mask])), y_top, y_bottom) if np.any(right_mask) else None
 
-        left = self._fit_line(left_points, y_top, y_bottom)
-        right = self._fit_line(right_points, y_top, y_bottom)
+        # Reescalar líneas: máscara → imagen original (aplicando offset del recorte)
+        def _scale_line(line):
+            if line is None:
+                return None
+            return [line[0] * scale_x + roi_x0, line[1] * scale_y + roi_y0,
+                    line[2] * scale_x + roi_x0, line[3] * scale_y + roi_y0]
 
-        if left is None and right is None:
-            return 0.0, self._empty_state(w, h), mask
+        left_detected  = _scale_line(left_line)
+        right_detected = _scale_line(right_line)
 
-        default_width = w * 0.28
-        if left is None:
-            left = [right[0] - default_width, right[1], right[2] - default_width, right[3]]
-        if right is None:
-            right = [left[0] + default_width, left[1], left[2] + default_width, left[3]]
+        # Actualizar _prev_state solo con líneas realmente detectadas en este frame
+        if left_detected is not None:
+            if self._prev_state is None:
+                self._prev_state = {}
+            self._prev_state['left'] = left_detected
+        if right_detected is not None:
+            if self._prev_state is None:
+                self._prev_state = {}
+            self._prev_state['right'] = right_detected
 
-        left_bottom = float(np.clip(left[2], 0, w - 1))
-        right_bottom = float(np.clip(right[2], 0, w - 1))
-        lane_center = (left_bottom + right_bottom) * 0.5
-        error = lane_center - center_x
+        # Fallback al estado anterior si falta alguna línea
+        left_line  = left_detected  if left_detected  is not None else (self._prev_state or {}).get('left')
+        right_line = right_detected if right_detected is not None else (self._prev_state or {}).get('right')
 
-        if abs(error) < w * 0.04:
-            zone = 'CENTER'
-        elif error < 0:
-            zone = 'LEFT'
-        else:
-            zone = 'RIGHT'
+        # Calcular offset en espacio original usando solo líneas detectadas en este frame
+        orig_center_x = orig_w / 2.0
+        offset = 0.0
+        left_x  = float(np.mean(xs[left_mask]))  * scale_x + roi_x0 if left_detected  is not None else None
+        right_x = float(np.mean(xs[right_mask])) * scale_x + roi_x0 if right_detected is not None else None
+        if left_x is not None and right_x is not None:
+            lane_center = (left_x + right_x) / 2.0
+            offset = lane_center - orig_center_x
+        elif left_x is not None:
+            offset = left_x - orig_center_x + 30 * scale_x
+        elif right_x is not None:
+            offset = right_x - orig_center_x - 30 * scale_x
 
-        return error, {
-            'image_width': w,
-            'image_height': h,
-            'left': [left_bottom, left[3], float(np.clip(left[0], 0, w - 1)), left[1]],
-            'right': [right_bottom, right[3], float(np.clip(right[0], 0, w - 1)), right[1]],
-            'error': float(error),
-            'zone': zone,
-            'lateral': float(np.clip(lane_center / w, 0.0, 1.0)),
-            'left_detected': len(left_points) >= 4,
-            'right_detected': len(right_points) >= 4
-        }, mask
+        state = {
+            'image_width': orig_w,
+            'image_height': orig_h,
+            'left': left_line,
+            'right': right_line,
+            'error': offset
+        }
+        return offset, state, mask
 
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
-
-    @staticmethod
-    def _hsv_mask(frame: np.ndarray) -> np.ndarray:
-        """Máscara clásica HSV para marcas blancas y amarillas."""
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        white = cv2.inRange(hsv, np.array([0, 0, 145]), np.array([179, 80, 255]))
-        yellow = cv2.inRange(hsv, np.array([15, 60, 80]), np.array([40, 255, 255]))
-        return cv2.bitwise_or(white, yellow)
 
     @staticmethod
     def _preprocess(frame: np.ndarray, size: tuple = (224, 224)) -> np.ndarray:
@@ -198,11 +183,13 @@ class LaneDetector:
             pass
 
     @staticmethod
-    def _fit_line(points: list, y_top: int, y_bottom: int):
+    def _fit_line(points: list, y_top: int, y_bottom: int, max_slope: float = 2.0):
         if len(points) < 4:
             return None
         pts = np.array(points, dtype=np.float32)
         m, b = np.polyfit(pts[:, 1], pts[:, 0], 1)
+        if abs(m) > max_slope:
+            return None
         return [float(m * y_top + b), float(y_top), float(m * y_bottom + b), float(y_bottom)]
 
     @staticmethod
@@ -211,10 +198,5 @@ class LaneDetector:
             'image_width': width,
             'image_height': height,
             'left': None,
-            'right': None,
-            'error': 0.0,
-            'zone': 'UNKNOWN',
-            'lateral': 0.5,
-            'left_detected': False,
-            'right_detected': False
+            'right': None
         }

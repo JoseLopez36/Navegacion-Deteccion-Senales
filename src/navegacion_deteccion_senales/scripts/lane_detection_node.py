@@ -2,6 +2,8 @@
 
 import sys
 import os
+import numpy as np
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import rclpy
@@ -112,7 +114,7 @@ class LaneDetectionNode(Node):
         frame = self._latest_frame
         try:
             t0 = time.time()
-            error, state, mask = self.detector.detect_lane_state(frame, roi_start=0.50)
+            error, state, mask = self.detector.detect_lane_state(frame)
             inference_ms = (time.time() - t0) * 1000.0
 
             # Publicar error lateral
@@ -130,16 +132,15 @@ class LaneDetectionNode(Node):
             state_msg.data = json.dumps({k: v for k, v in state.items()})
             self.state_pub.publish(state_msg)
 
-            # Publicar máscara de detección
-            mask_msg = self.bridge.cv2_to_imgmsg(mask, encoding='mono8')
+            # Publicar máscara de detección (convertir float32 a uint8)
+            mask_uint8 = (mask * 255).clip(0, 255).astype(np.uint8)
+            mask_msg = self.bridge.cv2_to_imgmsg(mask_uint8, encoding='mono8')
             mask_msg.header.stamp = self.get_clock().now().to_msg()
             self.mask_pub.publish(mask_msg)
 
             self.get_logger().info(
                 f"Inference: {inference_ms:.1f} ms | "
-                f"Error: {state['error']:+.1f} px | "
-                f"Zone: {state['zone']} | "
-                f"Left: {state['left_detected']} Right: {state['right_detected']}"
+                f"Error: {state['error']:+.1f} px"
             )
         except Exception as e:
             self.get_logger().error(f'Error during lane detection: {e}')
