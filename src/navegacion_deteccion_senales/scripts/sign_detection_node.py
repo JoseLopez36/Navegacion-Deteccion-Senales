@@ -6,7 +6,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import json
-from collections import Counter
+from collections import Counter, deque
 import numpy as np
 import torch
 import cv2
@@ -98,8 +98,8 @@ class SignDetectionNode(Node):
         self.rgb_camera_info      = None
         self.semantic_camera_info = None
 
-        # --- Buffer de votación ---
-        self._vote_buffer   = []
+        # --- Buffer de votación (ventana deslizante) ---
+        self._vote_buffer   = deque(maxlen=self.min_votes)
         self._voted_label   = 'none'
         self._voted_speed   = -1.0
 
@@ -286,6 +286,7 @@ class SignDetectionNode(Node):
                 self._voted_speed = self._CLASS_SPEED.get(winner, -1.0)
 
             return self._voted_label, self._voted_speed, bbox, mask
+
         except Exception as e:
             self.get_logger().warn(f'Error en clasificación: {e}')
             return 'detected', -1.0, bbox, mask

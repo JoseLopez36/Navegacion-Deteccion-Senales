@@ -171,7 +171,8 @@ class AnnotationGeneratorNode(Node):
 
     @staticmethod
     def _text_annotation(stamp: Time, x: float, y: float, text: str,
-                         font_size: float, color: tuple) -> TextAnnotation:
+                         font_size: float, color: tuple,
+                         bg: tuple = (0.0, 0.0, 0.0, 0.55)) -> TextAnnotation:
         t = TextAnnotation()
         t.timestamp = stamp
         t.position.x = float(x)
@@ -179,19 +180,27 @@ class AnnotationGeneratorNode(Node):
         t.text = text
         t.font_size = font_size
         t.text_color.r, t.text_color.g, t.text_color.b, t.text_color.a = color
-        t.background_color.a = 0.0
+        t.background_color.r, t.background_color.g, t.background_color.b, t.background_color.a = bg
         return t
 
     # ------------------------------------------------------------------
     # Construcción de anotaciones
     # ------------------------------------------------------------------
 
-    # Colores de zona para el HUD
-    _ZONE_COLOR = {
-        'CENTER':  (0.0,  1.0,  0.4,  1.0),
-        'LEFT':    (1.0,  0.25, 0.25, 1.0),
-        'RIGHT':   (1.0,  0.25, 0.25, 1.0),
-        'UNKNOWN': (0.55, 0.55, 0.55, 1.0),
+    # Colores por etiqueta de señal
+    _SIGN_COLOR = {
+        'stop':           (1.0,  0.15, 0.15, 1.0),
+        'speed_limit_30': (1.0,  0.6,  0.0,  1.0),
+        'speed_limit_60': (1.0,  0.6,  0.0,  1.0),
+        'speed_limit_90': (1.0,  0.6,  0.0,  1.0),
+        'detected':       (0.8,  0.8,  0.0,  1.0),
+    }
+    _SIGN_FILL = {
+        'stop':           (1.0,  0.15, 0.15, 0.12),
+        'speed_limit_30': (1.0,  0.6,  0.0,  0.10),
+        'speed_limit_60': (1.0,  0.6,  0.0,  0.10),
+        'speed_limit_90': (1.0,  0.6,  0.0,  0.10),
+        'detected':       (0.8,  0.8,  0.0,  0.08),
     }
 
     def _build_annotations(self, stamp: Time) -> ImageAnnotations:
@@ -205,10 +214,23 @@ class AnnotationGeneratorNode(Node):
         left  = s.get('left')
         right = s.get('right')
 
+        # ── Polígono de carril (relleno verde semitransparente) ─────────
+        if left and right:
+            poly = self._points_annotation(
+                stamp, PointsAnnotation.LINE_LOOP, 1.0,
+                outline=(0.0, 1.0, 0.4, 0.0),
+                fill=(0.0, 1.0, 0.4, 0.18))
+            poly.points.extend([
+                self._point2(left[0],  left[1]),
+                self._point2(left[2],  left[3]),
+                self._point2(right[2], right[3]),
+                self._point2(right[0], right[1])])
+            ann.points.append(poly)
+
         # ── Línea izquierda (amarillo) ──────────────────────────────────
         if left:
             line = self._points_annotation(
-                stamp, PointsAnnotation.LINE_STRIP, 5.0,
+                stamp, PointsAnnotation.LINE_STRIP, 6.0,
                 outline=(1.0, 0.85, 0.0, 1.0))
             line.points.extend([
                 self._point2(left[0], left[1]),
@@ -218,34 +240,22 @@ class AnnotationGeneratorNode(Node):
         # ── Línea derecha (cian) ────────────────────────────────────────
         if right:
             line = self._points_annotation(
-                stamp, PointsAnnotation.LINE_STRIP, 5.0,
-                outline=(0.0, 0.85, 1.0, 1.0))
+                stamp, PointsAnnotation.LINE_STRIP, 6.0,
+                outline=(0.0, 0.9, 1.0, 1.0))
             line.points.extend([
                 self._point2(right[0], right[1]),
                 self._point2(right[2], right[3])])
             ann.points.append(line)
 
-        # ── Polígono de carril (relleno verde semitransparente) ─────────
-        if left and right:
-            poly = self._points_annotation(
-                stamp, PointsAnnotation.LINE_LOOP, 1.0,
-                outline=(0.0, 1.0, 0.4, 0.5),
-                fill=(0.0, 1.0, 0.4, 0.12))
-            poly.points.extend([
-                self._point2(left[0],  left[1]),
-                self._point2(left[2],  left[3]),
-                self._point2(right[2], right[3]),
-                self._point2(right[0], right[1])])
-            ann.points.append(poly)
-
         # ── Línea de desviación: centro imagen → centro de carril ───────
-        error     = float(s.get('error', 0.0))
+        error         = float(s.get('error', 0.0))
         lane_center_x = cx - error
         y_dev         = h * 0.72
 
+        dev_color = (0.2, 1.0, 0.3, 1.0) if abs(error) < 30 else (1.0, 0.3, 0.2, 1.0)
         deviation = self._points_annotation(
-            stamp, PointsAnnotation.LINE_STRIP, 2.5,
-            outline=(1.0, 1.0, 0.0, 0.9))
+            stamp, PointsAnnotation.LINE_STRIP, 3.0,
+            outline=dev_color)
         deviation.points.extend([
             self._point2(cx, y_dev),
             self._point2(lane_center_x, y_dev)])
@@ -253,17 +263,16 @@ class AnnotationGeneratorNode(Node):
 
         # Punto en el centro del carril
         dot = self._points_annotation(
-            stamp, PointsAnnotation.POINTS, 8.0,
-            outline=(1.0, 1.0, 0.0, 1.0),
-            fill=(1.0, 1.0, 0.0, 1.0))
+            stamp, PointsAnnotation.POINTS, 10.0,
+            outline=dev_color, fill=dev_color)
         dot.points.append(self._point2(lane_center_x, y_dev))
         ann.points.append(dot)
 
         # Punto en el centro del vehículo (blanco)
         ego = self._points_annotation(
-            stamp, PointsAnnotation.POINTS, 8.0,
-            outline=(1.0, 1.0, 1.0, 0.8),
-            fill=(1.0, 1.0, 1.0, 0.8))
+            stamp, PointsAnnotation.POINTS, 10.0,
+            outline=(1.0, 1.0, 1.0, 0.9),
+            fill=(1.0, 1.0, 1.0, 0.9))
         ego.points.append(self._point2(cx, y_dev))
         ann.points.append(ego)
 
@@ -274,10 +283,13 @@ class AnnotationGeneratorNode(Node):
             by = float(bbox.get('y', 0))
             bw = float(bbox.get('w', 0))
             bh = float(bbox.get('h', 0))
+
+            sig_col  = self._SIGN_COLOR.get(self.sign_label,  (0.8, 0.8, 0.0, 1.0))
+            sig_fill = self._SIGN_FILL.get(self.sign_label,   (0.8, 0.8, 0.0, 0.08))
+
             box = self._points_annotation(
-                stamp, PointsAnnotation.LINE_LOOP, 3.0,
-                outline=(1.0, 0.3, 0.0, 1.0),
-                fill=(1.0, 0.3, 0.0, 0.08))
+                stamp, PointsAnnotation.LINE_LOOP, 3.5,
+                outline=sig_col, fill=sig_fill)
             box.points.extend([
                 self._point2(bx,      by),
                 self._point2(bx + bw, by),
@@ -285,34 +297,55 @@ class AnnotationGeneratorNode(Node):
                 self._point2(bx,      by + bh)])
             ann.points.append(box)
 
+            # Esquinas decorativas (L-shapes)
+            corner_len = min(bw, bh) * 0.2
+            for cx_c, cy_c, dx, dy in [
+                (bx,      by,      1, 1),
+                (bx + bw, by,     -1, 1),
+                (bx + bw, by + bh,-1,-1),
+                (bx,      by + bh, 1,-1),
+            ]:
+                lc = self._points_annotation(stamp, PointsAnnotation.LINE_STRIP, 5.0, outline=sig_col)
+                lc.points.extend([
+                    self._point2(cx_c + dx * corner_len, cy_c),
+                    self._point2(cx_c,                   cy_c),
+                    self._point2(cx_c,                   cy_c + dy * corner_len)])
+                ann.points.append(lc)
+
             speed_kmh_sign = self.sign_speed_ms * 3.6 if self.sign_speed_ms >= 0 else -1.0
-            speed_str  = f'{speed_kmh_sign:.0f} km/h' if speed_kmh_sign >= 0 else ''
+            speed_str  = f'  {speed_kmh_sign:.0f} km/h' if speed_kmh_sign >= 0 else ''
             label_str  = self.sign_label.replace('_', ' ').upper()
             ann.texts.append(self._text_annotation(
-                stamp, bx, max(0.0, by - 22.0),
-                f'{label_str}  {speed_str}', 16.0,
-                (1.0, 0.4, 0.0, 1.0)))
+                stamp, bx, max(0.0, by - 24.0),
+                f'{label_str}{speed_str}', 16.0,
+                (1.0, 1.0, 1.0, 1.0),
+                bg=(sig_col[0] * 0.5, sig_col[1] * 0.5, sig_col[2] * 0.5, 0.75)))
 
-        # ── HUD izquierdo: estado del carril ────────────────────────────
+        # ── HUD izquierdo: error lateral ────────────────────────────────
+        err_col = (0.3, 1.0, 0.4, 1.0) if abs(error) < 30 else (1.0, 0.35, 0.2, 1.0)
         ann.texts.append(self._text_annotation(
-            stamp, 12.0, 54.0,
-            f'Error: {self.lane_error:+.4f} m  ({int(error):+d} px)', 17.0,
-            (1.0, 1.0, 0.0, 1.0)))
+            stamp, 8.0, 28.0,
+            f'Error: {self.lane_error:+.4f} m  ({int(error):+d} px)', 16.0,
+            err_col,
+            bg=(0.0, 0.0, 0.0, 0.55)))
 
-        # ── HUD derecho: estado del control ─────────────────────────────
+        # ── HUD derecho: velocidad + control ────────────────────────────
         speed_kmh = self.current_speed * 3.6
-        rx = w - 160.0
+        rx = w - 148.0
 
         ann.texts.append(self._text_annotation(
             stamp, rx, 28.0, f'{speed_kmh:.1f} km/h', 22.0,
-            (1.0, 1.0, 1.0, 1.0)))
+            (1.0, 1.0, 1.0, 1.0),
+            bg=(0.0, 0.0, 0.0, 0.6)))
         ann.texts.append(self._text_annotation(
             stamp, rx, 54.0,
-            f'T {self.cmd_throttle:.2f}  B {self.cmd_brake:.2f}', 17.0,
-            (0.4, 1.0, 0.4, 1.0)))
+            f'T {self.cmd_throttle:.2f}  B {self.cmd_brake:.2f}', 15.0,
+            (0.4, 1.0, 0.4, 1.0),
+            bg=(0.0, 0.0, 0.0, 0.55)))
         ann.texts.append(self._text_annotation(
-            stamp, rx, 76.0, f'Steer {self.cmd_steer:+.3f}', 17.0,
-            (1.0, 0.65, 0.0, 1.0)))
+            stamp, rx, 76.0, f'Steer {self.cmd_steer:+.3f}', 15.0,
+            (1.0, 0.7, 0.1, 1.0),
+            bg=(0.0, 0.0, 0.0, 0.55)))
 
         return ann
 
