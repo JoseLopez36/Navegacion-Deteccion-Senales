@@ -14,10 +14,19 @@ class CNN(nn.Module):
             nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2),
+
+            # Bloc 2 : Contours internes (48x48 -> 24x24)
             nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2),
+            
+            # Bloc 3 : Idem (24x24 -> 12x12)
             nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+
+            # 🎯 Bloc 4 (Le Nouveau !) : Micro-détails (12x12 -> 6x6)
+            nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2)
         )
@@ -25,7 +34,7 @@ class CNN(nn.Module):
         self.flatten = nn.Flatten()
 
         self.dense_layers = nn.Sequential(
-            nn.Linear(12*12*128, 120),
+            nn.Linear(6*6*256, 120),
             nn.ReLU(),
             nn.Dropout(0.3),
             nn.Linear(120, 84),
@@ -101,7 +110,7 @@ def process_image(image):
 
 def validation_test():
     model = CNN()
-    model.load_state_dict(torch.load('mejor_weights.pth', weights_only=True))
+    model.load_state_dict(torch.load('weights.pth', weights_only=True))
     model.eval()
 
     validation_batch, labels = get_data()
@@ -121,17 +130,3 @@ def validation_test():
     print("\n--- Détail des prédictions (15 premiers éléments) ---")
     for i in range(len(validation_batch)):
         print(f"Image {i:02d} | Vrai Label: {labels[i].item()} -> Prédiction Modèle: {guess[i]}, logits: {pred[i]}")
-
-if __name__ == "__main__":
-    model = CNN()
-    model.load_state_dict(torch.load('mejor_weights.pth', weights_only=True))
-    model.eval()
-
-    path = "test_dataset/class_0/img_0.png" # Example
-    image = cv2.imread(path)
-    image = process_image(image)
-
-    with torch.no_grad():
-        pred = model(image)
-        guess = pred.argmax(1)
-    print(guess)
