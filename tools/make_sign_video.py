@@ -22,6 +22,7 @@ Uso:
 """
 
 import argparse
+import bisect
 import sys
 import json
 from pathlib import Path
@@ -36,15 +37,14 @@ from sign_classification import CNN, process_image
 
 
 # ── Clases de salida del clasificador CNN ─────────────────────────────────────
-_CNN_CLASS_NAMES = {0: "speed_limit_30", 1: "speed_limit_60", 2: "speed_limit_90"}
+_CNN_CLASS_NAMES = {0: "speed_limit_30", 1: "speed_limit_60", 2: "speed_limit_90", 3: "stop"}
 
-# ── Colores BGR por clase CNN ──────────────────────────────────────────────────
-_CLASS_COLORS = {
-    "speed_limit_30": (200, 0,   200),
-    "speed_limit_60": (180, 0,   220),
-    "speed_limit_90": (160, 0,   240),
-}
-_DEFAULT_COLOR = (0, 220, 220)   # cian amarillento — color semántico de CARLA
+_COLOR_MATCH   = (0,   200,  60)   # verde  — predicción correcta
+_COLOR_MISMATCH = (0,   40,  220)  # rojo   — predicción incorrecta
+_COLOR_GT      = (0,   200,  60)   # verde  — etiqueta GT
+_COLOR_NO_GT   = (120, 120, 120)   # gris   — sin GT disponible
+_DEFAULT_COLOR = (0,   220, 220)   # cian   — fallback
+_BBOX_PADDING  = 20                # px de margen añadido a la bbox
 
 
 def _load_model(weights_path: str, device: torch.device) -> CNN:
@@ -64,22 +64,32 @@ def _classify_crop(model: CNN, crop: np.ndarray, device: torch.device) -> tuple[
     return _CNN_CLASS_NAMES[idx], float(probs[idx].item())
 
 
+def _put_label_bg(frame: np.ndarray, text: str, x: int, y: int,
+                  color: tuple, font_scale: float = 0.5, thickness: int = 1) -> int:
+    """Dibuja texto con fondo opaco. Devuelve la altura ocupada."""
+    (tw, th), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+    cv2.rectangle(frame, (x, y - th - 4), (x + tw + 4, y + baseline), color, -1)
+    cv2.putText(frame, text, (x + 2, y),
+                cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
+    return th + baseline + 6
+
+
 def _draw_detection(frame: np.ndarray, x: int, y: int, w: int, h: int,
-                    label: str, confidence: float) -> None:
-    color = _CLASS_COLORS.get(label, _DEFAULT_COLOR)
+                    pred_label: str, confidence: float, gt_label: str | None) -> None:
+    has_gt = gt_label is not None
+    match  = has_gt and (pred_label == gt_label)
 
-    cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2, cv2.LINE_AA)
+    box_color = _COLOR_MATCH if match else _COLOR_MISMATCH
+    cv2.rectangle(frame, (x, y), (x + w, y + h), box_color, 2, cv2.LINE_AA)
 
-    text = f"{label}: {confidence:.2f}"
-    (tw, th), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-    label_y = y - 10 if y - 10 > th + 4 else y + h + th + 10
+    label_y = y - 6 if y - 6 > 28 else y + h + 22
 
-    cv2.rectangle(frame,
-                  (x, label_y - th - 4),
-                  (x + tw, label_y + baseline),
-                  color, -1)
-    cv2.putText(frame, text, (x, label_y),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+    pred_text = f"PRED: {pred_label} ({confidence:.2f})"
+    row_h = _put_label_bg(frame, pred_text, x, label_y, box_color)
+
+    if has_gt:
+        gt_text = f"GT:   {gt_label}"
+        _put_label_bg(frame, gt_text, x, label_y + row_h, _COLOR_GT)
 
 
 def _draw_hud(frame: np.ndarray, n_detections: int, idx: int, total: int) -> None:
@@ -93,25 +103,101 @@ def _draw_hud(frame: np.ndarray, n_detections: int, idx: int, total: int) -> Non
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (180, 180, 180), 1, cv2.LINE_AA)
 
 
+def _stem_to_us(stem: str) -> int:
+    """
+    Extrae un timestamp en microsegundos desde un stem con formato
+    sign_YYYYMMDD_HHMMSS_uuuuuu  o  crop_YYYYMMDD_HHMMSS_uuuuuu_idx.
+    Devuelve -1 si no es posible parsearlo.
+    """
+    parts = stem.split("_")
+    try:
+        # partes: [prefix, YYYYMMDD, HHMMSS, uuuuuu, ...]
+        date_s  = parts[1]   # YYYYMMDD
+        time_s  = parts[2]   # HHMMSS
+        us_s    = parts[3]   # uuuuuu
+        return int(date_s + time_s + us_s)
+    except (IndexError, ValueError):
+        return -1
+
+
+def _load_gt_index(dataset_dir: Path) -> dict[str, list[str | None]]:
+    """
+    Lee todas las anotaciones de classification/annotations/ y construye un
+    índice {stem_detección: [gt_label_det0, gt_label_det1, ...]}.
+
+    Los timestamps entre detection e imágenes de clasificación pueden diferir
+    ligeramente; se busca el stem de detección más cercano en tiempo.
+    """
+    annots_dir  = dataset_dir / "classification" / "annotations"
+    det_img_dir = dataset_dir / "detection" / "images"
+
+    # Construir lista ordenada de (timestamp_us, stem) de detección
+    det_stems_ts = sorted(
+        (_stem_to_us(p.stem), p.stem)
+        for p in det_img_dir.glob("sign_*.jpg")
+        if _stem_to_us(p.stem) >= 0
+    )
+    det_ts_arr = [t for t, _ in det_stems_ts]
+
+    def _nearest_det_stem(ts: int) -> str | None:
+        if not det_stems_ts or ts < 0:
+            return None
+        i = bisect.bisect_left(det_ts_arr, ts)
+        candidates = []
+        if i < len(det_stems_ts):
+            candidates.append(det_stems_ts[i])
+        if i > 0:
+            candidates.append(det_stems_ts[i - 1])
+        return min(candidates, key=lambda x: abs(x[0] - ts))[1]
+
+    index: dict[str, dict[int, str]] = {}
+    if annots_dir.is_dir():
+        for json_path in sorted(annots_dir.glob("*.json")):
+            with open(json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            gt_class  = data.get("class", None)
+            crop_stem = Path(data.get("image", "")).stem   # crop_<ts>_<idx>
+            crop_ts   = _stem_to_us(crop_stem)
+            det_stem  = _nearest_det_stem(crop_ts)
+            if det_stem is None:
+                continue
+            try:
+                det_idx = int(crop_stem.rsplit("_", 1)[-1])
+            except ValueError:
+                det_idx = 0
+            index.setdefault(det_stem, {})[det_idx] = gt_class
+    # Convertir a listas ordenadas por índice de detección
+    return {stem: [d[i] for i in sorted(d)] for stem, d in index.items()}
+
+
 def render_frame(frame: np.ndarray, detections: list,
                  model: CNN, device: torch.device,
-                 idx: int, total: int) -> np.ndarray:
+                 idx: int, total: int,
+                 gt_labels: list[str | None] | None = None) -> np.ndarray:
     out = frame.copy()
     fh, fw = out.shape[:2]
 
-    for det in detections:
+    for det_idx, det in enumerate(detections):
         bx, by, bw, bh = det['bbox']
+        gt_label = (gt_labels[det_idx]
+                    if gt_labels and det_idx < len(gt_labels)
+                    else None)
 
-        x1 = max(0, bx);        y1 = max(0, by)
-        x2 = min(fw, bx + bw);  y2 = min(fh, by + bh)
+        # Crop con padding para la inferencia
+        pad = _BBOX_PADDING
+        cx1 = max(0, bx - pad);       cy1 = max(0, by - pad)
+        cx2 = min(fw, bx + bw + pad); cy2 = min(fh, by + bh + pad)
 
-        if x2 > x1 and y2 > y1:
-            crop = frame[y1:y2, x1:x2]
-            label, conf = _classify_crop(model, crop, device)
+        if cx2 > cx1 and cy2 > cy1:
+            crop = frame[cy1:cy2, cx1:cx2]
+            pred_label, conf = _classify_crop(model, crop, device)
         else:
-            label, conf = "traffic_sign", 1.0
+            pred_label, conf = "traffic_sign", 1.0
 
-        _draw_detection(out, bx, by, bw, bh, label, conf)
+        # Bbox dibujada con padding
+        dx1 = max(0, bx - pad);       dy1 = max(0, by - pad)
+        dx2 = min(fw, bx + bw + pad); dy2 = min(fh, by + bh + pad)
+        _draw_detection(out, dx1, dy1, dx2 - dx1, dy2 - dy1, pred_label, conf, gt_label)
 
     _draw_hud(out, len(detections), idx, total)
     return out
@@ -132,9 +218,11 @@ def main():
                         help="Forzar uso de CPU aunque CUDA esté disponible")
     args = parser.parse_args()
 
-    dataset_dir = Path(args.dataset_dir)
-    images_dir  = dataset_dir / "detection" / "images"
-    annots_dir  = dataset_dir / "detection" / "annotations"
+    dataset_dir   = Path(args.dataset_dir)
+    images_dir    = dataset_dir / "detection" / "images"
+    annots_dir    = dataset_dir / "detection" / "annotations"
+    gt_index      = _load_gt_index(dataset_dir)
+    print(f"GT index: {len(gt_index)} imágenes con anotaciones de clasificación.")
 
     for d in (images_dir, annots_dir):
         if not d.is_dir():
@@ -207,8 +295,9 @@ def main():
         with open(ann_path, 'r', encoding='utf-8') as f:
             annotation = json.load(f)
         detections = annotation.get('detections', [])
+        gt_labels  = gt_index.get(img_path.stem, None)
 
-        writer.write(render_frame(frame, detections, model, device, idx, total))
+        writer.write(render_frame(frame, detections, model, device, idx, total, gt_labels))
 
         if (idx + 1) % 50 == 0 or (idx + 1) == total:
             print(f"  {idx + 1}/{total}")
