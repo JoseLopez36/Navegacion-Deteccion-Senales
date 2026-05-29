@@ -36,10 +36,10 @@ sign_detection_node:
     sign_bbox_topic: /sign_detection/bbox
     sign_mask_topic: /sign_detection/mask
     model_path: /home/ros/workspace/src/navegacion_deteccion_senales/models/sign_model.pth
-    min_sign_area: 100
+    min_sign_area: 150
     max_sign_area: 50000
     bbox_padding: 20
-    min_votes: 10
+    min_votes: 5
 
 annotation_generator_node:
   ros__parameters:

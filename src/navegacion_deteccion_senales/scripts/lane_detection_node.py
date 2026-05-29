@@ -74,6 +74,11 @@ class LaneDetectionNode(Node):
         self._fy = None
         self._cy = None
 
+        # --- Métricas de inferencia ---
+        self._inf_count   = 0
+        self._inf_max_ms  = 0.0
+        self._inf_sum_ms  = 0.0
+
         # --- Utilidades ---
         self.bridge = CvBridge()
         self.get_logger().info(f'Loading model from: {self.model_path}')
@@ -155,8 +160,15 @@ class LaneDetectionNode(Node):
             mask_msg.header.stamp = self.get_clock().now().to_msg()
             self.mask_pub.publish(mask_msg)
 
+            self._inf_count  += 1
+            self._inf_sum_ms += inference_ms
+            if inference_ms > self._inf_max_ms:
+                self._inf_max_ms = inference_ms
+            mean_ms = self._inf_sum_ms / self._inf_count
             self.get_logger().info(
-                f"Inference: {inference_ms:.1f} ms | "
+                f"Inference: {inference_ms:.1f} ms  "
+                f"max={self._inf_max_ms:.1f} ms  "
+                f"mean={mean_ms:.1f} ms | "
                 f"Error: {state['error']:+.1f} px"
             )
         except Exception as e:

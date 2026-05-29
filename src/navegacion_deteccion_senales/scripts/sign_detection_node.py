@@ -6,6 +6,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import json
+import time
 from collections import Counter, deque
 import numpy as np
 import torch
@@ -102,6 +103,11 @@ class SignDetectionNode(Node):
         self._vote_buffer   = deque(maxlen=self.min_votes)
         self._voted_label   = 'none'
         self._voted_speed   = -1.0
+
+        # --- Métricas de inferencia ---
+        self._inf_count   = 0
+        self._inf_max_ms  = 0.0
+        self._inf_sum_ms  = 0.0
 
         self._load_model()
 
@@ -273,10 +279,24 @@ class SignDetectionNode(Node):
             return 'detected', -1.0, bbox, mask
 
         try:
+            t0 = time.time()
             tensor = process_image(crop).to(self.device)
             with torch.no_grad():
                 logits = self.model(tensor)
                 class_id = int(logits.argmax(1).item())
+            inference_ms = (time.time() - t0) * 1000.0
+
+            self._inf_count  += 1
+            self._inf_sum_ms += inference_ms
+            if inference_ms > self._inf_max_ms:
+                self._inf_max_ms = inference_ms
+            mean_ms = self._inf_sum_ms / self._inf_count
+            self.get_logger().info(
+                f'Inference: {inference_ms:.1f} ms  '
+                f'max={self._inf_max_ms:.1f} ms  '
+                f'mean={mean_ms:.1f} ms | '
+                f'label={self._voted_label}'
+            )
 
             self._vote_buffer.append(class_id)
 

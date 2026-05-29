@@ -35,7 +35,7 @@ def generate_launch_description():
             name='sign_detection_node',
             output='screen',
             parameters=[params_file],
-            arguments=['--ros-args', '--log-level', 'warn'],
+            arguments=['--ros-args', '--log-level', 'info'],
         ),
         Node(
             package=package_name,
