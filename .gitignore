@@ -4,6 +4,8 @@ log/
 
 dataset/
 
+bags/
+
 .vscode/
 .cursor/
 .windsurf/

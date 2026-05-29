@@ -135,6 +135,28 @@ El layout carga dos paneles de imagen:
 - **Izquierda**: `/carla/ego_vehicle/rgb_view/image` — vista exterior del vehículo
 - **Derecha**: `/carla/ego_vehicle/rgb_front/image` — cámara frontal (detección de señales)
 
+### Grabación de rosbag (.mcap)
+
+Usar `tools/docker-compose-record.yaml`, que añade el servicio `record` al stack normal:
+
+```bash
+mkdir -p bags
+xhost +local:docker
+docker compose -f tools/docker-compose-record.yaml up
+```
+
+El bag se guarda en `bags/sesion/` en el host (montado como volumen). Para usar un nombre personalizado:
+
+```bash
+BAG_NAME=prueba_01 docker compose -f tools/docker-compose-record.yaml up
+```
+
+Para detener la grabación sin parar el resto de servicios:
+
+```bash
+docker stop rosbag_record
+```
+
 ## Generación de Dataset
 
 El paquete incluye dos nodos de recolección que funcionan en modo conducción manual (sin `vehicle_control_node`). Controla el vehículo con `W/A/S/D` desde CARLA (`B` para activar el modo manual).

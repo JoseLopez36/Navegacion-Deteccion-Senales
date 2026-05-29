@@ -6,6 +6,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import json
+from collections import Counter
 import numpy as np
 import torch
 import cv2
@@ -40,7 +41,7 @@ class SignDetectionNode(Node):
     """
 
     _CLASS_NAMES = {0: 'speed_limit_30', 1: 'speed_limit_60', 2: 'speed_limit_90', 3: 'stop'}
-    _CLASS_SPEED = {0: 30.0 / 3.6, 1: 60.0 / 3.6, 2: 90.0 / 3.6, 3: 0.0}
+    _CLASS_SPEED = {0: 10.0 / 3.6, 1: 20.0 / 3.6, 2: 30.0 / 3.6, 3: 0.0}
 
     def __init__(self):
         super().__init__('sign_detection_node')
@@ -57,6 +58,8 @@ class SignDetectionNode(Node):
         self.declare_parameter('model_path', '')
         self.declare_parameter('min_sign_area', 200)
         self.declare_parameter('max_sign_area', 50000)
+        self.declare_parameter('bbox_padding', 10)
+        self.declare_parameter('min_votes', 10)
 
         self.image_topic                = self.get_parameter('image_topic').value
         self.rgb_camera_info_topic      = self.get_parameter('rgb_camera_info_topic').value
@@ -69,6 +72,8 @@ class SignDetectionNode(Node):
         self.model_path                 = self.get_parameter('model_path').value
         self.min_sign_area              = int(self.get_parameter('min_sign_area').value)
         self.max_sign_area              = int(self.get_parameter('max_sign_area').value)
+        self.bbox_padding               = int(self.get_parameter('bbox_padding').value)
+        self.min_votes                  = int(self.get_parameter('min_votes').value)
 
         # --- QoS ---
         sensor_qos = QoSProfile(
@@ -93,6 +98,11 @@ class SignDetectionNode(Node):
         self.rgb_camera_info      = None
         self.semantic_camera_info = None
 
+        # --- Buffer de votación ---
+        self._vote_buffer   = []
+        self._voted_label   = 'none'
+        self._voted_speed   = -1.0
+
         self._load_model()
 
         # --- Publicadores ---
@@ -105,7 +115,7 @@ class SignDetectionNode(Node):
         self.rgb_sub      = message_filters.Subscriber(self, Image, self.image_topic,    qos_profile=sensor_qos)
         self.semantic_sub = message_filters.Subscriber(self, Image, self.semantic_topic, qos_profile=sensor_qos)
         self.sync = message_filters.ApproximateTimeSynchronizer(
-            [self.rgb_sub, self.semantic_sub], queue_size=10, slop=0.03
+            [self.rgb_sub, self.semantic_sub], queue_size=5, slop=0.1
         )
         self.sync.registerCallback(self._on_images_sync)
 
@@ -204,6 +214,13 @@ class SignDetectionNode(Node):
         bx, by, bw, bh = cv2.boundingRect(best_cnt)
         bx, by, bw, bh = self._map_bbox_to_rgb(bx, by, bw, bh, semantic_frame.shape)
 
+        img_h, img_w = frame.shape[:2]
+        pad = self.bbox_padding
+        bx = max(0, bx - pad)
+        by = max(0, by - pad)
+        bw = min(img_w - bx, bw + 2 * pad)
+        bh = min(img_h - by, bh + 2 * pad)
+
         return bx, by, bw, bh, mask
 
     def _map_bbox_to_rgb(self, x, y, w, h, semantic_frame_shape):
@@ -239,11 +256,18 @@ class SignDetectionNode(Node):
 
         result = self._bbox_from_semantic(frame, semantic_frame)
         if result is None:
+            self._vote_buffer.clear()
+            self._voted_label = 'none'
+            self._voted_speed = -1.0
             return 'none', -1.0, {}, black_mask
 
         bx, by, bw, bh, mask = result
-        crop = frame[by:by + bh, bx:bx + bw]
         bbox = {'x': bx, 'y': by, 'w': bw, 'h': bh}
+
+        if bx <= 0 or by <= 0 or (bx + bw) >= img_w or (by + bh) >= img_h:
+            return 'detected', -1.0, bbox, mask
+
+        crop = frame[by:by + bh, bx:bx + bw]
 
         if self.model is None:
             return 'detected', -1.0, bbox, mask
@@ -254,9 +278,14 @@ class SignDetectionNode(Node):
                 logits = self.model(tensor)
                 class_id = int(logits.argmax(1).item())
 
-            label    = self._CLASS_NAMES.get(class_id, 'unknown')
-            speed_ms = self._CLASS_SPEED.get(class_id, -1.0)
-            return label, speed_ms, bbox, mask
+            self._vote_buffer.append(class_id)
+
+            if len(self._vote_buffer) >= self.min_votes:
+                winner = Counter(self._vote_buffer).most_common(1)[0][0]
+                self._voted_label = self._CLASS_NAMES.get(winner, 'unknown')
+                self._voted_speed = self._CLASS_SPEED.get(winner, -1.0)
+
+            return self._voted_label, self._voted_speed, bbox, mask
         except Exception as e:
             self.get_logger().warn(f'Error en clasificación: {e}')
             return 'detected', -1.0, bbox, mask

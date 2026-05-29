@@ -6,10 +6,10 @@ vehicle_control_node:
     kp_throttle: 0.3            # P sobre error de velocidad
     ki_throttle: 0.05           # I sobre error de velocidad
 
-    # Parámetros de control (18 km/h)
-    target_speed: 5.0          # m/s (18 km/h)
-    kp_steering: 0.2           # [rad/m]
-    ki_steering: 0.01          # [rad/(m·s)]
+    # Parámetros de control
+    target_speed: 2.78         # m/s
+    kp_steering: 0.20          # [rad/m]
+    ki_steering: 0.02          # [rad/(m·s)]
     kd_steering: 0.10          # [rad·s/m]
 
     lane_error_topic: /lane_detection/lane_error
@@ -38,6 +38,8 @@ sign_detection_node:
     model_path: /home/ros/workspace/src/navegacion_deteccion_senales/models/sign_model.pth
     min_sign_area: 100
     max_sign_area: 50000
+    bbox_padding: 20
+    min_votes: 10
 
 annotation_generator_node:
   ros__parameters:
