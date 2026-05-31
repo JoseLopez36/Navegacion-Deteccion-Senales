@@ -81,7 +81,7 @@
 \newpage
 
 \begin{abstract}
-Este trabajo presenta el diseño e implementación de un sistema de percepción para un vehículo autónomo simulado en \textbf{CARLA Simulator}, integrado con \textbf{ROS2 Humble} mediante contenedores Docker. El sistema comprende tres módulos principales: detección de líneas de carril mediante una red de segmentación semántica VGG16--U-Net, clasificación de señales de tráfico a través de una CNN entrenada con PyTorch, y un sistema de integración que une ambos módulos con un controlador PID doble para la conducción autónoma. El código fuente, modelos entrenados, datasets y vídeos demostrativos se encuentran en el repositorio público de GitHub: \url{https://github.com/JoseLopez36/Navegacion-Deteccion-Senales}.
+Este trabajo presenta el diseño e implementación de un sistema de percepción para un vehículo autónomo simulado en \textit{CARLA Simulator}, integrado con \textit{ROS2 Humble} mediante contenedores Docker. El sistema comprende tres módulos principales: detección de líneas de carril mediante una red de segmentación semántica VGG16--U-Net, clasificación de señales de tráfico a través de una CNN entrenada con PyTorch, y un sistema de integración que une ambos módulos con un controlador PID doble para la conducción autónoma. El código fuente, modelos entrenados, datasets y vídeos demostrativos se encuentran en el repositorio público de GitHub: \url{https://github.com/JoseLopez36/Navegacion-Deteccion-Senales}.
 \end{abstract}
 
 \newpage
@@ -92,7 +92,7 @@ Este trabajo presenta el diseño e implementación de un sistema de percepción 
 
 La conducción autónoma es uno de los retos tecnológicos más ambiciosos de la última década. Para que un vehículo sea capaz de desplazarse sin intervención humana debe ser competente en varias etapas: percepción del entorno, planificación de trayectoria y actuación sobre los sistemas de control. Este trabajo aborda la etapa de \textit{percepción}, responsable de extraer información útil del entorno a partir de los datos sensoriales.
 
-El objetivo del proyecto es desarrollar un sistema de percepción y control básico para un vehículo autónomo simulado en \textbf{CARLA Simulator}, conectado a través de \textbf{ROS2 Humble}. El flujo de funcionamiento diseñado es el siguiente:
+El objetivo del proyecto es desarrollar un sistema de percepción y control básico para un vehículo autónomo simulado en \textit{CARLA Simulator}, conectado a través de \textit{ROS2 Humble}. El flujo de funcionamiento diseñado es el siguiente:
 
 \begin{enumerate}
     \item Adquisición de imágenes desde la cámara virtual de CARLA.
