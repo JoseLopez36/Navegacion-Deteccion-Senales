@@ -132,7 +132,78 @@ La memoria se organiza en tres bloques principales:
 \label{sec:senales}
 % ═════════════════════════════════════════════════════════════════════════════
 
-% TODO
+Una vez que el vehículo puede seguir el carril, tiene que respetar las reglas del código de circulación, para evitar accidentes. Entonces, el vehículo
+tiene que ser capaz de detectar y reconocer las señales. En esta parte, se tratan de tres señales de velocidad: 30 $km/h$, 60 $km/h$ y 90 $km/h$. Se verá 
+en las secciones siguientes comó el vehículo detecta las señales, y comó reconoce señales de velocidad mediante una red neuronal convolucional. 
+
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection{Detección de las señales}
+% ─────────────────────────────────────────────────────────────────────────────
+
+Cuanto a la detección de las señales, se utiliza el modulo \textit{OpenCV} de python para tratar las imagenes. En esta sección se descomponen los diferentes
+pasos para detectar una señal. La Figura~\ref{fig:senal} illlustra una imagen que podría venir de la cámara del vehículo, y que el algoritmo de detección recibe
+como entrada.\\
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.5\textwidth]{media_CNN/speed.jpg}
+    \caption{Imagen de entrada de la detección, sobre la cual se realizará los diferentes pasos de detección.}
+    \label{fig:senal}
+\end{figure}
+
+En primer lugar, se hace una detección de todas la zonas rojas en la imagen. En efecto, las tres señales tienen como color distintivo el rojo. Se convierte
+la imagen en el formato HSV (más robusto contra los cambios de luz), y se realiza la detección del rojo mediante máscaras. La Figura~\ref{fig:mascara} muestra
+la máscara conseguida después este paso. \\
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.5\textwidth]{media_CNN/Mascara.png}
+    \caption{máscara conseguida mediante la detección del color.}
+    \label{fig:mascara}
+\end{figure}
+
+Una vez que todas las zonas rojas están detectadas, se detectan sus contornos. El objetivo es retener la zona con la area mayor, 
+porque si hay una señal en la imagen, coresponde a esta zona. Sin embargo, se define una area mínima de detección. Si la zona mayor tiene 
+una area menor que esta area mínima, se considera que la imagen es vacía de  toda señal. 
+
+Si se detecta una señal, se crea una bounding box alrededor de ella y se zooma en esta bounding box. Este zoom constitua el resultado de la detección,
+que permitirá la red neuronal clasificar la señal detectada. 
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.45\textwidth}
+        \includegraphics[width=\textwidth]{media_CNN/bounding_box.png}
+        \caption{Bounding box alrededor de la señal.}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.35\textwidth}
+        \includegraphics[width=\textwidth]{media_CNN/final_image.png}
+        \caption{Zoom sobre la señal.}
+    \end{subfigure}
+    \caption{Resultados de la detección}
+    \label{fig:fin_deteccion}
+\end{figure}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection{clasificación de las señales}
+% ─────────────────────────────────────────────────────────────────────────────
+
+Ahora que el vehículo es capaz de detectar la presencia o la ausencia de una señal, tiene que reconocerla para que adapte su velocidad a la situación. 
+En esta parte, se tratarán de l arquitectura CNN del modelo así como los datasets utilizados para entrenarlo y validarlo. Se analizarán los resultados
+para identificar las ventajas y los inconvenientes de este modelo. 
+
+\subsubsection{Datasets utilizados}
+
+
+\subsubsection{Arquitectura de la red neuronal}
+
+
+\subsubsection{Resultados de los entrenamientos}
+
+
+\subsubsection{Test sobre señales de la simulación}
+
+A ver si es mejor poner esta parte al final de la parte 4.
 
 % ═════════════════════════════════════════════════════════════════════════════
 \section{Integración en simulación y resultados}
@@ -266,7 +337,7 @@ Ajusta el ángulo del volante para mantener el vehículo centrado en el carril. 
     e_{\text{filt}}[k] = \alpha\,e_{\text{raw}}[k] + (1 - \alpha)\,e_{\text{filt}}[k-1]
 \end{equation}
 
-La salida del PID, en radianes, se normaliza por el ángulo físico máximo del volante ($\theta_{\max} = 0.6~\text{rad} \approx 34°$) para obtener el valor de dirección normalizado de CARLA en $[-1,1]$. La convención de signo establece que un error positivo (vehículo desplazado a la derecha del carril) genera un giro a la izquierda (dirección negativa).
+La salida del PID, en radianes, se normaliza por el ángulo físico máximo del volante ($\theta_{\max} = 0.6~\text{rad} \approx 34 grados$) para obtener el valor de dirección normalizado de CARLA en $[-1,1]$. La convención de signo establece que un error positivo (vehículo desplazado a la derecha del carril) genera un giro a la izquierda (dirección negativa).
 
 Ambos PIDs incorporan anti-windup que limita el término integral al rango $[-10, 10]$. Los parámetros finales configurados en \texttt{params.yaml} se recogen en la Tabla~\ref{tab:pid}.
 
