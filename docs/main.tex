@@ -124,10 +124,152 @@ La memoria se organiza en tres bloques principales:
 \section{Detección de carriles}
 \label{sec:carriles}
 % ═════════════════════════════════════════════════════════════════════════════
+Uno de los objetivos principales de este proyecto es la detección de las líneas de carril a partir de imágenes capturadas por una cámara frontal. Para ello se han evaluado diferentes enfoques basados en visión artificial y aprendizaje profundo, con el objetivo de obtener una representación fiable de la posición de los carriles que posteriormente pueda utilizarse para tareas de guiado y seguimiento.
 
-% TODO
+Para el entrenamiento y validación de los modelos se ha utilizado el dataset TuSimple, uno de los conjuntos de datos de referencia en el ámbito de la detección de carriles para conducción autónoma.
 
-% ═════════════════════════════════════════════════════════════════════════════
+El dataset proporciona imágenes capturadas desde una cámara frontal instalada en un vehículo, así como la posición anotada de las líneas de carril presentes en cada escena.
+
+\begin{figure}[H]
+    \centering
+    
+    \begin{subfigure}[b]{0.48\textwidth}
+        \includegraphics[width=\textwidth]{media/0313-1_2400_imagen.jpg}
+        \caption{Imagen ejemplo del dataset.}
+        \label{fig:dataset_image}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+        \includegraphics[width=\textwidth]{media/0313-1_2400_mask.jpg}
+        \caption{Máscara generada a partir de JSON.}
+        \label{fig:dataset_mask}
+    \end{subfigure}
+    
+    \caption{Ejemplo de una imagen del conjunto de datos y la máscara de segmentación obtenida a partir de sus anotaciones en formato JSON.}
+    \label{fig:dataset_example}
+\end{figure}
+
+\subsection{Primer enfoque: estimación mediante líneas horizontales}
+
+Como primera aproximación se intentó reproducir la metodología propuesta por Yoo et al.\footnote{Yoo, S., Lee, H., Myeong, H., Yun, S., Park, H., Cho, J., \& Kim, D. H. (2020). \textit{End-to-End Lane Marker Detection via Row-wise Classification}. arXiv:2005.08630.}, basada en la representación de los carriles mediante una serie de puntos obtenidos a partir de múltiples líneas horizontales distribuidas sobre la imagen.
+
+La idea principal consiste en dividir la imagen en diferentes franjas horizontales y estimar para cada una de ellas la posición horizontal de las líneas de carril. De este modo, el carril queda representado como una sucesión de puntos que posteriormente pueden unirse para reconstruir la geometría de los carriles.
+
+Debido a las limitaciones computacionales y al tamaño del modelo utilizado, inicialmente se emplearon únicamente entre ocho y diez líneas horizontales distribuidas a lo largo de la imagen.
+
+Sin embargo, esta resolución resultó insuficiente para describir adecuadamente la geometría de los carriles. En situaciones con curvas pronunciadas o cambios de perspectiva, la cantidad de puntos obtenida era demasiado reducida para reconstruir de forma precisa la trayectoria de las líneas.
+
+Tras diversas pruebas se comprobó que los resultados obtenidos no alcanzaban el nivel de precisión requerido para el seguimiento fiable del vehículo, por lo que se decidió explorar un enfoque alternativo basado en segmentación semántica.
+
+\subsection{Enfoque basado en segmentación semántica}
+La segunda aproximación consistió en reformular el problema como una tarea de segmentación semántica binaria.
+
+En lugar de estimar únicamente una serie de puntos representativos, el objetivo pasa a ser clasificar cada píxel de la imagen indicando si pertenece o no a una línea de carril.
+
+Esta estrategia permite obtener una representación mucho más detallada de la escena y facilita la posterior extracción de la geometría del carril.
+
+Para este propósito se desarrolló una arquitectura basada en U-Net utilizando VGG16 como encoder. 
+
+La arquitectura implementada combina dos componentes principales:
+
+\begin{itemize}
+    \item Encoder basado en VGG16.
+    \item Decoder basado en U-Net.
+\end{itemize}
+
+El encoder se encarga de extraer características visuales de la imagen, mientras que el decoder reconstruye progresivamente una máscara de segmentación con la misma resolución que la imagen de entrada.
+
+\subsubsection{Encoder VGG16}
+Se ha utilizado la arquitectura VGG16 preentrenada sobre ImageNet mediante técnicas de transfer learning.
+
+El uso de pesos preentrenados permite aprovechar características visuales previamente aprendidas, tales como bordes, texturas y patrones geométricos, reduciendo el tiempo de entrenamiento y mejorando la capacidad de generalización.
+
+Durante el proceso de entrenamiento se permitió el ajuste de todos los parámetros de la red para adaptarlos específicamente a la detección de carriles.
+
+Las capas seleccionadas del encoder se utilizan posteriormente en las conexiones de salto (skip connections) características de la arquitectura U-Net.
+
+\subsubsection{Decoder U-Net}
+El decoder reconstruye progresivamente la resolución espacial perdida durante el proceso de compresión realizado por el encoder.
+
+Para ello se utilizan operaciones de upsampling que duplican la resolución de los mapas de características en cada etapa.
+
+Posteriormente, dichos mapas se concatenan con la información procedente de las capas equivalentes del encoder mediante skip connections.
+
+Estas conexiones permiten recuperar detalles espaciales finos que resultan fundamentales para delimitar con precisión las líneas de carril.
+
+\subsubsection{Bloque convolucional}
+Tras cada operación de concatenación se aplica un bloque convolucional compuesto por:
+
+\begin{itemize}
+    \item Convolución 1×1.
+    \item Convolución 3×3.
+    \item Activación ELU.
+    \item Batch Normalization.
+    \item Dropout.
+\end{itemize}
+
+La convolución 1×1 permite reorganizar y combinar la información procedente de los distintos canales de características.
+
+Posteriormente, la convolución 3×3 analiza las relaciones espaciales locales y permite detectar patrones relevantes para la identificación de los carriles.
+
+La activación ELU introduce no linealidad en el modelo y mejora la estabilidad del aprendizaje frente a funciones de activación tradicionales como ReLU.
+
+La capa Batch Normalization normaliza las activaciones de la red, acelerando la convergencia durante el entrenamiento y mejorando la robustez del modelo.
+
+Finalmente, se incorpora una capa Dropout con una tasa del 25 \%, utilizada como mecanismo de regularización para reducir el sobreajuste.
+
+\subsection{Entrenamiento del modelo}
+Para entrenar el modelo fue necesario transformar las anotaciones proporcionadas por TuSimple en máscaras binarias de segmentación.
+
+Cada máscara contiene información pixel a pixel indicando las regiones pertenecientes a las líneas de carril. Estas máscaras constituyen la salida esperada durante el proceso de entrenamiento supervisado.
+
+El entrenamiento se realizó utilizando imágenes redimensionadas a una resolución de 224×224 píxeles.
+
+Durante el proceso de aprendizaje, la red recibe como entrada una imagen de carretera y genera una máscara de probabilidad donde cada píxel representa la probabilidad de pertenecer a una línea de carril.
+
+La salida final se obtiene aplicando una función de activación sigmoide y un umbral de decisión para convertir dichas probabilidades en una máscara binaria.
+
+Para el entrenamiento del modelo se han realizado 10 épocas de entreno. Las curvas de aprendizaje del modelo de precisión y pérdida se han representado en la Figura \ref{fig:resEpocas}. En ellas se puede observar como se ve mejorado el rendimiento del modelo conforme nuevas épocas son resueltas.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{media/resultadoEpocasCarril.jpg}
+    \caption{Resultados Épocas del entrenamiento}
+    \label{fig:resEpocas}
+\end{figure}
+
+\subsection{Resultados Seguimiento de Carriles}
+En esta sección se presentan los resultados obtenidos por el modelo de detección de carriles en distintos escenarios de prueba.
+
+En primer lugar, se muestra una predicción sobre una carretera recta, donde el modelo es capaz de identificar de forma estable la estructura del carril sin presentar desviaciones significativas.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\linewidth]{media/prediccionRecto.jpg}
+    \caption{Predicción de un Carril recto}
+    \label{fig:placeholder}
+\end{figure}
+
+En segundo lugar, se analiza una predicción en un tramo con una ligera curva. En este escenario se observa que el modelo mantiene un buen seguimiento de la trayectoria del carril, adaptándose correctamente a la curvatura sin perder continuidad, lo que indica una adecuada capacidad de generalización ante variaciones suaves en la geometría de la carretera.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\linewidth]{media/prediccionCurvaLigera.jpg}
+    \caption{Predicción de Carril con ligera Curva}
+    \label{fig:placeholder}
+\end{figure}
+
+Por último, se incluye una comparación entre la predicción del modelo y la máscara real correspondiente. En este caso se aprecia una alta similitud entre ambas, con una buena coincidencia en la forma y posición de los carriles. No obstante, se observan pequeñas desviaciones en algunas zonas, debidas a elementos presentes en la imagen. 
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{media/resultados_carril.jpg}
+    \caption{Comparación de una imagen de ejemplo con su máscara real y la predicción del modelo}
+    \label{fig:placeholder}
+\end{figure}
+
+% 
+═════════════════════════════════════════════════════════════════════════════
 \section{Detección y clasificación de señales}
 \label{sec:senales}
 % ═════════════════════════════════════════════════════════════════════════════
