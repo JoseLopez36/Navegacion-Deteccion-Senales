@@ -282,7 +282,7 @@ en las secciones siguientes comó el vehículo detecta las señales, y comó rec
 \subsection{Detección de las señales}
 % ─────────────────────────────────────────────────────────────────────────────
 
-Cuanto a la detección de las señales, se utiliza el modulo \textit{OpenCV} de python para tratar las imagenes. En esta sección se descomponen los diferentes
+Cuanto a la detección de las señales, se utiliza el modulo \textit{OpenCV} de python para tratar las imágenes. En esta sección se descomponen los diferentes
 pasos para detectar una señal. La Figura~\ref{fig:senal} illlustra una imagen que podría venir de la cámara del vehículo, y que el algoritmo de detección recibe
 como entrada.\\
 
@@ -327,25 +327,92 @@ que permitirá la red neuronal clasificar la señal detectada.
 \end{figure}
 
 % ─────────────────────────────────────────────────────────────────────────────
-\subsection{clasificación de las señales}
+\subsection{Clasificación de las señales}
 % ─────────────────────────────────────────────────────────────────────────────
 
 Ahora que el vehículo es capaz de detectar la presencia o la ausencia de una señal, tiene que reconocerla para que adapte su velocidad a la situación. 
-En esta parte, se tratarán de l arquitectura CNN del modelo así como los datasets utilizados para entrenarlo y validarlo. Se analizarán los resultados
+En esta parte, se tratarán de la arquitectura CNN del modelo así como los datasets utilizados para entrenarlo y validarlo. Se analizarán los resultados
 para identificar las ventajas y los inconvenientes de este modelo. 
 
 \subsubsection{Datasets utilizados}
 
+Se utiliza el \textit{German Traffic Sign Recognition Benchmark} (GTSRB): \url{http://benchmark.ini.rub.de/?section=gtsdb&subsection=news}
+
+Este dataset contiene varios tipos de señales, como señales de velocidad, de dirección, etc. Sin embargo, no tiene señales de 90 $km/h$, entonces se 
+lo utiliza para las señales de 30 $km/h$ (1500 imágenes) y 60 $km/h$. (1360 imágenes)\\
+
+Para crear un dataset de entrenamiento con señales de 90 $km/h$, se crea en primer lugar un pequeño dataset con imágenes que se encontran en la red. Una vez que se tiene
+unas imágenes (alrededor 70 imágenes), se utiliza un script Python para aplicar transformaciones en las imágenes, como rotaciones o cambios de luz. Al
+final, se obtiene 500 imágenes. 
+
+Se podrían obtener más imágenes mediante estas transformaciones, para alcanzar 1500 imágenes y tener un dataset equilibrado. No obstante, este dataset
+provocaría un overfitting sobre la clase de las señales de 90 $km/h$. En efecto, aunque hubiera más imágenes, estas se basarían en un pequeño conjunto de 
+70 imágenes. Al final, este dataset aprendería estas 70 imágenes de memoria. Por lo tanto, se eligió crear menos imágenes para conseguir mejores resultados. \\
+
+En cuanto a los datasets de validación, se aplica el mismo método para obtener una parte con señales de 90 $km/h$. Pero en este caso, no se importa
+el problema anterior ya que el modelo no va a modificar sus pesos con este dataset. Entonces se obtiene al final un dataset de validación con 720 imágenes
+para cada tipo de señal. \\
+
+Por fin, el dataset de test se compone unicamente de imágenes que provienen de la simulación, con 20 imágenes para cada tipo de señal.\\
+
+El Cuadro~\ref{tab:datasets} resume el contenido de cada dataset. 
+
+\begin{table}[h!]
+    \centering
+    \begin{tabular}{|c|c|c|c|}
+        \hline
+        \textbf{Dataset} & \textbf{Entrenamiento} & \textbf{Validación} & \textbf{Test} \\
+        \hline
+        \hline
+        \raisebox{-0.25\height}{\includegraphics[width=0.9cm]{media_CNN/30.jpg}} & 1500 & 720 & 20 \\
+        \hline
+        \raisebox{-0.25\height}{\includegraphics[width=0.9cm]{media_CNN/60.jpg}} & 1360 & 720 & 20 \\
+        \hline
+        \raisebox{-0.25\height}{\includegraphics[width=1.2cm]{media_CNN/90.png}} & 500 & 720 & 20 \\
+        \hline
+    \end{tabular}
+    \caption{Número de imágenes para cada dataset y cada señal.}
+    \label{tab:datasets}
+\end{table}
 
 \subsubsection{Arquitectura de la red neuronal}
 
+Se ha creado una red neuronal convolucional mediante el módulo \textit{PyTorch}. El modelo tiene que reconocer la señal en una imagen en color de 
+tamaño 96x96. Como todo modelo CNN, este modelo puede dividirse en dos partes:
+
+\begin{itemize}
+    \item La parte convolucional que se compone de cuatro capas convolucionales con un kernel 3x3 y entre cada capa una capa de MaxPooling de tamaño 2 para reducir el número de datos, y por lo tanto el número de cálculos.
+    \item La parte de clasificación que se compone de tres capas densas. Las dos primeras incluyen una capa de Dropout para reducir el overfitting, y la capa de salida tiene 3 neuronas, una para cada clase. 
+\end{itemize}
+
+Entre ambas partes, una capa \text{Flatten} permite aplanar los datos para conseguir una entrada válida para las capas densas. \\
+
+La Figura~\ref{fig:CNN} illustra la arquitectura del modelo. 
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=\textwidth]{media_CNN/CNN.png}
+    \caption{Arquitectura del modelo CNN que se utiliza para clasificar las señales}
+    \label{fig:CNN}
+\end{figure}
 
 \subsubsection{Resultados de los entrenamientos}
 
+En la Figura~\ref{fig:entrenamiento} se muestran los resultados de un entrenamiento del modelo con 23 epocas. Se observa que las pérdidas y la eficiencia 
+se estabilizan al final del entrenamiento. 
+
+\textbf{Expliquer ici les résultats et pourquoi ça fluctue autant (Dropout, etc)}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=\textwidth]{media_CNN/final_result.png}
+    \caption{Resultados de un entrenamiento con la evolución la pérdidas a la izquierda, y de la eficiencia a la derecha}
+    \label{fig:entrenamiento}
+\end{figure}
 
 \subsubsection{Test sobre señales de la simulación}
 
-A ver si es mejor poner esta parte al final de la parte 4.
+\textbf{Ici résumer les résultats eus sur le dataset de test, résumer les pourcentages dans un tableau et expliquer que: 1. 30 et 90 super car on applique un filtre donc on est heureux, 2. 60 souvent confondus avec le 90 ? Vérifier avec la matrice de confusion (plutot en parler dans la partie précédente)} 
 
 % ═════════════════════════════════════════════════════════════════════════════
 \section{Integración en simulación y resultados}
