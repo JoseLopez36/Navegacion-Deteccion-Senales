@@ -338,10 +338,10 @@ para identificar las ventajas y los inconvenientes de este modelo.
 Se utiliza el \textit{German Traffic Sign Recognition Benchmark} (GTSRB): \url{http://benchmark.ini.rub.de/?section=gtsdb&subsection=news}
 
 Este dataset contiene varios tipos de señales, como señales de velocidad, de dirección, etc. Sin embargo, no tiene señales de 90 $km/h$, entonces se 
-lo utiliza para las señales de 30 $km/h$ (1500 imágenes) y 60 $km/h$. (1360 imágenes)\\
+lo utiliza para las señales de 30 $km/h$ y 60 $km/h$.\\
 
 Para crear un dataset de entrenamiento con señales de 90 $km/h$, se crea en primer lugar un pequeño dataset con imágenes que se encontran en la red. Una vez que se tiene
-unas imágenes (alrededor 70 imágenes), se utiliza un script Python para aplicar transformaciones en las imágenes, como rotaciones o cambios de luz. Al
+unas imágenes (alrededor de 70 imágenes), se utiliza un script Python para aplicar transformaciones en las imágenes, como rotaciones o cambios de luz. Al
 final, se obtiene 500 imágenes. 
 
 Se podrían obtener más imágenes mediante estas transformaciones, para alcanzar 1500 imágenes y tener un dataset equilibrado. No obstante, este dataset
@@ -352,7 +352,7 @@ En cuanto a los datasets de validación, se aplica el mismo método para obtener
 el problema anterior ya que el modelo no va a modificar sus pesos con este dataset. Entonces se obtiene al final un dataset de validación con 720 imágenes
 para cada tipo de señal. \\
 
-Por fin, el dataset de test se compone unicamente de imágenes que provienen de la simulación, con 20 imágenes para cada tipo de señal.\\
+Por fin, el dataset de test se compone unicamente de imágenes que provienen de la simulación, con 22 imágenes para cada tipo de señal.\\
 
 El Cuadro~\ref{tab:datasets} resume el contenido de cada dataset. 
 
@@ -363,11 +363,11 @@ El Cuadro~\ref{tab:datasets} resume el contenido de cada dataset.
         \textbf{Dataset} & \textbf{Entrenamiento} & \textbf{Validación} & \textbf{Test} \\
         \hline
         \hline
-        \raisebox{-0.25\height}{\includegraphics[width=0.9cm]{media_CNN/30.jpg}} & 1500 & 720 & 20 \\
+        \raisebox{-0.25\height}{\includegraphics[width=0.9cm]{media_CNN/30.jpg}} & 1500 & 720 & 22 \\
         \hline
-        \raisebox{-0.25\height}{\includegraphics[width=0.9cm]{media_CNN/60.jpg}} & 1360 & 720 & 20 \\
+        \raisebox{-0.25\height}{\includegraphics[width=0.9cm]{media_CNN/60.jpg}} & 1360 & 720 & 22 \\
         \hline
-        \raisebox{-0.25\height}{\includegraphics[width=1.2cm]{media_CNN/90.png}} & 500 & 720 & 20 \\
+        \raisebox{-0.25\height}{\includegraphics[width=1.2cm]{media_CNN/90.png}} & 500 & 720 & 22 \\
         \hline
     \end{tabular}
     \caption{Número de imágenes para cada dataset y cada señal.}
@@ -397,21 +397,42 @@ La Figura~\ref{fig:CNN} illustra la arquitectura del modelo.
 
 \subsubsection{Resultados de los entrenamientos}
 
-En la Figura~\ref{fig:entrenamiento} se muestran los resultados de un entrenamiento del modelo con 23 epocas. Se observa que las pérdidas y la eficiencia 
-se estabilizan al final del entrenamiento. 
-
-\textbf{Expliquer ici les résultats et pourquoi ça fluctue autant (Dropout, etc)}
+En la Figura~\ref{fig:entrenamiento} se muestran los resultados de un entrenamiento del modelo con 23 épocas. Se observa que las pérdidas y la eficiencia 
+se estabilizan al final del entrenamiento. Sin embargo, durante el entrenamiento, las pérdidas y la eficiencia varían de manera significativa. Estas 
+variaciones pueden explicarse por las capas de Dropout. En efecto, en nuestro modelo, estas capas desactivan las neuronas con una probabilidad de 0.3 para 
+luchar contra el overfitting. Esto obliga el modelo a encontrar diferentes maneras reconocer las características de la imagen. \\
 
 \begin{figure}[h!]
     \centering
     \includegraphics[width=\textwidth]{media_CNN/final_result.png}
-    \caption{Resultados de un entrenamiento con la evolución la pérdidas a la izquierda, y de la eficiencia a la derecha}
+    \caption{Resultados de un entrenamiento con la evolución de las pérdidas a la izquierda, y de la eficiencia a la derecha}
     \label{fig:entrenamiento}
 \end{figure}
 
+\newpage
+Varios otros entrenamientos han sido efectuados con varios valores de épocas. Si el número de épocas supera 25, un overfitting aparece y los resultados
+sobre la clase de señales de 60 $km/h$ son muy bajos. Al otro lado con menos épocas, las pérdidas y la eficiencia varían demasiado como se observa en la
+Figura~\ref{fig:entrenamiento}. 
+
 \subsubsection{Test sobre señales de la simulación}
 
-\textbf{Ici résumer les résultats eus sur le dataset de test, résumer les pourcentages dans un tableau et expliquer que: 1. 30 et 90 super car on applique un filtre donc on est heureux, 2. 60 souvent confondus avec le 90 ? Vérifier avec la matrice de confusion (plutot en parler dans la partie précédente)} 
+Antes de comprobar este modelo en la simulación, se lo comproba con un dataset de Test con señales que provienen de la simulación. Este dataset se compone de 
+22 imágenes para cada tipo de señal. La Figura~\ref{fig:CM} muestra los resultados en forma de matriz de confusión. 
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\textwidth]{media_CNN/CM.png}
+    \caption{Matriz de confusión del test sobre el test del modelo}
+    \label{fig:CM}
+\end{figure}
+
+En esta matriz de confusión, se puede ver que el modelo adivina bien las señales de 30 $km/h$ y de 90 $km/h$, con porcentajes de aciertos igual a un
+86 \% y un 81 \% respectivamente. Estos porcentajes son suficientes, porque en la simulación no se tratan de imágenes aisladas, sino de un flujo video. Entonces se 
+utiliza un filtro para suavizar las predicciones. 
+
+En cuanto a la clasificación de las señales de 60 $km/h$, los resultados son más bajos, con un porcentaje de aciertos igual a un 54 \%. Se observa que
+el modelo confunde las señales de 60 $km/h$ con las señales de 90 $km/h$. En efecto, un 6 y un 9 son muy parecidos, lo que puede complicar la clasificación
+de estas señales. 
 
 % ═════════════════════════════════════════════════════════════════════════════
 \section{Integración en simulación y resultados}
