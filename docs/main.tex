@@ -18,6 +18,7 @@
 \usepackage{fancyhdr}
 
 \geometry{a4paper, top=3cm, bottom=2.5cm, left=3cm, right=2.5cm}
+\setlength{\headheight}{15pt}
 \graphicspath{{../media/}}
 
 \hypersetup{
@@ -81,7 +82,7 @@
 \newpage
 
 \begin{abstract}
-Este trabajo presenta el diseño e implementación de un sistema de percepción para un vehículo autónomo simulado en \textit{CARLA Simulator}, integrado con \textit{ROS2 Humble} mediante contenedores Docker. El sistema comprende tres módulos principales: detección de líneas de carril mediante una red de segmentación semántica VGG16--U-Net, clasificación de señales de tráfico a través de una CNN entrenada con PyTorch, y un sistema de integración que une ambos módulos con un controlador PID doble para la conducción autónoma. El código fuente, modelos entrenados, datasets y vídeos demostrativos se encuentran en el repositorio público de GitHub: \url{https://github.com/JoseLopez36/Navegacion-Deteccion-Senales}.
+Este trabajo presenta el diseño e implementación de un sistema de percepción para un vehículo autónomo simulado en \textit{CARLA Simulator}, integrado con \textit{ROS2 Humble} mediante contenedores Docker. Tras evaluar un primer enfoque basado en líneas horizontales, la detección de carriles se resuelve mediante una red VGG16--U-Net entrenada con el \textit{dataset} TuSimple (TensorFlow/Keras) y exportada a ONNX para inferencia en tiempo real. La detección y clasificación de señales de límite de velocidad (30, 60 y 90~km/h) combina localización por visión clásica (OpenCV en el desarrollo del clasificador; segmentación semántica de CARLA en simulación) con una CNN entrenada en PyTorch sobre GTSRB y un conjunto propio de imágenes. Ambos módulos se integran en un sistema ROS2 con controladores PID de velocidad y dirección, con latencias medias de unos 50~ms en carriles y 13~ms en señales. El código fuente, modelos entrenados, \textit{datasets} y vídeos demostrativos se encuentran en el repositorio público de GitHub: \url{https://github.com/JoseLopez36/Navegacion-Deteccion-Senales}.
 \end{abstract}
 
 \newpage
@@ -96,13 +97,13 @@ El objetivo del proyecto es desarrollar un sistema de percepción y control bás
 
 \begin{enumerate}
     \item Adquisición de imágenes desde la cámara virtual de CARLA.
-    \item Detección de líneas de carril mediante un modelo de segmentación semántica (VGG16--U-Net con TensorFlow/Keras), y estimación del error lateral del vehículo.
-    \item Detección y reconocimiento de señales de tráfico mediante una CNN implementada en PyTorch.
-    \item Interpretación de las señales para adaptar la velocidad del vehículo.
-    \item Publicación de comandos de control hacia CARLA.
+    \item Detección de líneas de carril mediante segmentación semántica (VGG16--U-Net entrenada con el \textit{dataset} TuSimple en TensorFlow/Keras, inferida en ONNX) y estimación del error lateral del vehículo.
+    \item Localización de señales de tráfico en la imagen y clasificación de los límites de velocidad (30, 60 y 90~km/h) mediante una CNN entrenada en PyTorch con GTSRB y un \textit{dataset} propio.
+    \item Adaptación de la velocidad de referencia en función de las señales detectadas.
+    \item Cálculo de los comandos de dirección y velocidad mediante controladores PID y publicación hacia CARLA.
 \end{enumerate}
 
-Todo el código fuente, modelos entrenados, datasets y material multimedia (imágenes y vídeo demostrativo) están disponibles en el repositorio público de GitHub del proyecto:
+Todo el código fuente, modelos entrenados, \textit{datasets} y material multimedia (imágenes y vídeo demostrativo) están disponibles en el repositorio público de GitHub del proyecto:
 \begin{center}
     \url{https://github.com/JoseLopez36/Navegacion-Deteccion-Senales}
 \end{center}
@@ -113,11 +114,11 @@ La memoria se organiza en tres bloques principales:
 
 \begin{description}
     \item[Sección \ref{sec:carriles}: Detección de carriles.]
-    Describe el dataset empleado, la arquitectura VGG16--U-Net y los resultados del modelo de segmentación.
+    Presenta el \textit{dataset} TuSimple, un primer enfoque descartado basado en líneas horizontales, la arquitectura VGG16--U-Net adoptada, el proceso de entrenamiento y los resultados del modelo de segmentación en distintos escenarios.
     \item[Sección \ref{sec:senales}: Detección y clasificación de señales.]
-    Explica el proceso de detección por imagen y el diseño y entrenamiento de la CNN clasificadora.
+    Describe la detección de señales mediante OpenCV, los \textit{datasets} empleados (GTSRB y conjunto propio para 90~km/h), la arquitectura y entrenamiento de la CNN clasificadora, y los resultados obtenidos en el conjunto de prueba capturado en la simulación.
     \item[Sección \ref{sec:integracion}: Integración en simulación y resultados.]
-    Desarrolla la arquitectura software completa en CARLA/ROS2, el control del vehículo y los resultados obtenidos en simulación.
+    Desarrolla la arquitectura software completa en CARLA/ROS2/Docker, los nodos del sistema, los controladores PID de velocidad y dirección, la generación de \textit{datasets} sintéticos y los resultados de conducción autónoma en tiempo real.
 \end{description}
 
 % ═════════════════════════════════════════════════════════════════════════════
@@ -126,16 +127,16 @@ La memoria se organiza en tres bloques principales:
 % ═════════════════════════════════════════════════════════════════════════════
 Uno de los objetivos principales de este proyecto es la detección de las líneas de carril a partir de imágenes capturadas por una cámara frontal. Para ello se han evaluado diferentes enfoques basados en visión artificial y aprendizaje profundo, con el objetivo de obtener una representación fiable de la posición de los carriles que posteriormente pueda utilizarse para tareas de guiado y seguimiento.
 
-Para el entrenamiento y validación de los modelos se ha utilizado el dataset TuSimple, uno de los conjuntos de datos de referencia en el ámbito de la detección de carriles para conducción autónoma.
+Para el entrenamiento y validación de los modelos se ha utilizado el \textit{dataset} TuSimple, uno de los conjuntos de datos de referencia en el ámbito de la detección de carriles para conducción autónoma.
 
-El dataset proporciona imágenes capturadas desde una cámara frontal instalada en un vehículo, así como la posición anotada de las líneas de carril presentes en cada escena.
+Este conjunto proporciona imágenes capturadas desde una cámara frontal instalada en un vehículo, así como la posición anotada de las líneas de carril presentes en cada escena.
 
 \begin{figure}[H]
     \centering
     
     \begin{subfigure}[b]{0.48\textwidth}
         \includegraphics[width=\textwidth]{0313-1_2400_imagen.jpg}
-        \caption{Imagen ejemplo del dataset.}
+        \caption{Imagen de ejemplo del \textit{dataset}.}
         \label{fig:dataset_image}
     \end{subfigure}
     \hfill
@@ -162,6 +163,7 @@ Sin embargo, esta resolución resultó insuficiente para describir adecuadamente
 Tras diversas pruebas se comprobó que los resultados obtenidos no alcanzaban el nivel de precisión requerido para el seguimiento fiable del vehículo, por lo que se decidió explorar un enfoque alternativo basado en segmentación semántica.
 
 \subsection{Enfoque basado en segmentación semántica}
+
 La segunda aproximación consistió en reformular el problema como una tarea de segmentación semántica binaria.
 
 En lugar de estimar únicamente una serie de puntos representativos, el objetivo pasa a ser clasificar cada píxel de la imagen indicando si pertenece o no a una línea de carril.
@@ -180,20 +182,20 @@ La arquitectura implementada combina dos componentes principales:
 El encoder se encarga de extraer características visuales de la imagen, mientras que el decoder reconstruye progresivamente una máscara de segmentación con la misma resolución que la imagen de entrada.
 
 \subsubsection{Encoder VGG16}
-Se ha utilizado la arquitectura VGG16 preentrenada sobre ImageNet mediante técnicas de transfer learning.
+Se ha utilizado la arquitectura VGG16 preentrenada sobre ImageNet mediante técnicas de \textit{transfer learning}.
 
 El uso de pesos preentrenados permite aprovechar características visuales previamente aprendidas, tales como bordes, texturas y patrones geométricos, reduciendo el tiempo de entrenamiento y mejorando la capacidad de generalización.
 
 Durante el proceso de entrenamiento se permitió el ajuste de todos los parámetros de la red para adaptarlos específicamente a la detección de carriles.
 
-Las capas seleccionadas del encoder se utilizan posteriormente en las conexiones de salto (skip connections) características de la arquitectura U-Net.
+Las capas seleccionadas del encoder se utilizan posteriormente en las conexiones de salto (\textit{skip connections}) características de la arquitectura U-Net.
 
 \subsubsection{Decoder U-Net}
 El decoder reconstruye progresivamente la resolución espacial perdida durante el proceso de compresión realizado por el encoder.
 
 Para ello se utilizan operaciones de upsampling que duplican la resolución de los mapas de características en cada etapa.
 
-Posteriormente, dichos mapas se concatenan con la información procedente de las capas equivalentes del encoder mediante skip connections.
+Posteriormente, dichos mapas se concatenan con la información procedente de las capas equivalentes del encoder mediante \textit{skip connections}.
 
 Estas conexiones permiten recuperar detalles espaciales finos que resultan fundamentales para delimitar con precisión las líneas de carril.
 
@@ -221,7 +223,7 @@ Finalmente, se incorpora una capa Dropout con una tasa del 25 \%, utilizada como
 \subsection{Entrenamiento del modelo}
 Para entrenar el modelo fue necesario transformar las anotaciones proporcionadas por TuSimple en máscaras binarias de segmentación.
 
-Cada máscara contiene información pixel a pixel indicando las regiones pertenecientes a las líneas de carril. Estas máscaras constituyen la salida esperada durante el proceso de entrenamiento supervisado.
+Cada máscara contiene información píxel a píxel indicando las regiones pertenecientes a las líneas de carril. Estas máscaras constituyen la salida esperada durante el proceso de entrenamiento supervisado.
 
 El entrenamiento se realizó utilizando imágenes redimensionadas a una resolución de 224×224 píxeles.
 
@@ -229,16 +231,16 @@ Durante el proceso de aprendizaje, la red recibe como entrada una imagen de carr
 
 La salida final se obtiene aplicando una función de activación sigmoide y un umbral de decisión para convertir dichas probabilidades en una máscara binaria.
 
-Para el entrenamiento del modelo se han realizado 10 épocas de entreno. Las curvas de aprendizaje del modelo de precisión y pérdida se han representado en la Figura \ref{fig:resEpocas}. En ellas se puede observar como se ve mejorado el rendimiento del modelo conforme nuevas épocas son resueltas.
+El entrenamiento se realizó durante 10 épocas. Las curvas de precisión y pérdida se representan en la Figura~\ref{fig:resEpocas}, donde se aprecia cómo mejora el rendimiento del modelo a medida que avanzan las épocas.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=1\linewidth]{resultadoEpocasCarril.jpg}
-    \caption{Resultados Épocas del entrenamiento}
+    \caption{Evolución de la precisión y la pérdida durante el entrenamiento.}
     \label{fig:resEpocas}
 \end{figure}
 
-\subsection{Resultados Seguimiento de Carriles}
+\subsection{Resultados del seguimiento de carriles}
 En esta sección se presentan los resultados obtenidos por el modelo de detección de carriles en distintos escenarios de prueba.
 
 En primer lugar, se muestra una predicción sobre una carretera recta, donde el modelo es capaz de identificar de forma estable la estructura del carril sin presentar desviaciones significativas.
@@ -246,8 +248,8 @@ En primer lugar, se muestra una predicción sobre una carretera recta, donde el 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.7\linewidth]{prediccionRecto.jpg}
-    \caption{Predicción de un Carril recto}
-    \label{fig:placeholder}
+    \caption{Predicción sobre un carril recto.}
+    \label{fig:pred_recto}
 \end{figure}
 
 En segundo lugar, se analiza una predicción en un tramo con una ligera curva. En este escenario se observa que el modelo mantiene un buen seguimiento de la trayectoria del carril, adaptándose correctamente a la curvatura sin perder continuidad, lo que indica una adecuada capacidad de generalización ante variaciones suaves en la geometría de la carretera.
@@ -255,8 +257,8 @@ En segundo lugar, se analiza una predicción en un tramo con una ligera curva. E
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.7\linewidth]{prediccionCurvaLigera.jpg}
-    \caption{Predicción de Carril con ligera Curva}
-    \label{fig:placeholder}
+    \caption{Predicción sobre un carril con ligera curva.}
+    \label{fig:pred_curva}
 \end{figure}
 
 Por último, se incluye una comparación entre la predicción del modelo y la máscara real correspondiente. En este caso se aprecia una alta similitud entre ambas, con una buena coincidencia en la forma y posición de los carriles. No obstante, se observan pequeñas desviaciones en algunas zonas, debidas a elementos presentes en la imagen. 
@@ -264,8 +266,8 @@ Por último, se incluye una comparación entre la predicción del modelo y la m�
 \begin{figure}[H]
     \centering
     \includegraphics[width=1\linewidth]{resultados_carril.jpg}
-    \caption{Comparación de una imagen de ejemplo con su máscara real y la predicción del modelo}
-    \label{fig:placeholder}
+    \caption{Comparación entre imagen de entrada, máscara real y predicción del modelo.}
+    \label{fig:pred_comparacion}
 \end{figure}
 
 % ═════════════════════════════════════════════════════════════════════════════
@@ -273,95 +275,90 @@ Por último, se incluye una comparación entre la predicción del modelo y la m�
 \label{sec:senales}
 % ═════════════════════════════════════════════════════════════════════════════
 
-Una vez que el vehículo puede seguir el carril, tiene que respetar las reglas del código de circulación, para evitar accidentes. Entonces, el vehículo
-tiene que ser capaz de detectar y reconocer las señales. En esta parte, se tratan de tres señales de velocidad: 30 $km/h$, 60 $km/h$ y 90 $km/h$. Se verá 
-en las secciones siguientes comó el vehículo detecta las señales, y comó reconoce señales de velocidad mediante una red neuronal convolucional. 
+Una vez que el vehículo puede seguir el carril, debe respetar las reglas del código de circulación para evitar accidentes. Por ello, tiene que ser capaz de detectar y reconocer las señales. En esta parte se tratan tres señales de límite de velocidad: 30, 60 y 90~km/h. En las subsecciones siguientes se explica cómo se localizan las señales en la imagen y cómo se clasifican mediante una red neuronal convolucional. 
 
 % ─────────────────────────────────────────────────────────────────────────────
 \subsection{Detección de las señales}
 % ─────────────────────────────────────────────────────────────────────────────
 
-Cuanto a la detección de las señales, se utiliza el modulo \textit{OpenCV} de python para tratar las imágenes. En esta sección se descomponen los diferentes
-pasos para detectar una señal. La Figura~\ref{fig:senal} illlustra una imagen que podría venir de la cámara del vehículo, y que el algoritmo de detección recibe
-como entrada.\\
+En cuanto a la detección de las señales, se utiliza el módulo \textit{OpenCV} de Python para procesar las imágenes. En esta sección se describen los distintos
+pasos del algoritmo de localización empleado durante el desarrollo del clasificador. La Figura~\ref{fig:senal} ilustra una imagen que podría proceder de la cámara del vehículo y que el algoritmo recibe
+como entrada.
 
-\begin{figure}[h!]
+\begin{figure}[H]
     \centering
     \includegraphics[width=0.5\textwidth]{media_CNN/speed.jpg}
-    \caption{Imagen de entrada de la detección, sobre la cual se realizará los diferentes pasos de detección.}
+    \caption{Imagen de entrada de la detección, sobre la que se realizarán los distintos pasos del algoritmo.}
     \label{fig:senal}
 \end{figure}
 
-En primer lugar, se hace una detección de todas la zonas rojas en la imagen. En efecto, las tres señales tienen como color distintivo el rojo. Se convierte
-la imagen en el formato HSV (más robusto contra los cambios de luz), y se realiza la detección del rojo mediante máscaras. La Figura~\ref{fig:mascara} muestra
-la máscara conseguida después este paso. \\
+En primer lugar, se detectan todas las zonas rojas de la imagen. En efecto, las tres señales comparten el rojo como color distintivo. Se convierte
+la imagen al formato HSV (más robusto frente a los cambios de iluminación) y se obtiene una máscara del color rojo. La Figura~\ref{fig:mascara} muestra
+la máscara obtenida tras este paso.
 
-\begin{figure}[h!]
+\begin{figure}[H]
     \centering
     \includegraphics[width=0.5\textwidth]{media_CNN/Mascara.png}
-    \caption{máscara conseguida mediante la detección del color.}
+    \caption{Máscara obtenida mediante la detección del color rojo.}
     \label{fig:mascara}
 \end{figure}
 
-Una vez que todas las zonas rojas están detectadas, se detectan sus contornos. El objetivo es retener la zona con la area mayor, 
-porque si hay una señal en la imagen, coresponde a esta zona. Sin embargo, se define una area mínima de detección. Si la zona mayor tiene 
-una area menor que esta area mínima, se considera que la imagen es vacía de  toda señal. 
+Una vez detectadas las zonas rojas, se calculan sus contornos. El objetivo es conservar la zona de mayor área, 
+pues si hay una señal en la imagen, corresponde a esta región. No obstante, se define un área mínima de detección: si la zona mayor tiene 
+un área inferior a ese umbral, se considera que la imagen no contiene ninguna señal. 
 
-Si se detecta una señal, se crea una bounding box alrededor de ella y se zooma en esta bounding box. Este zoom constitua el resultado de la detección,
-que permitirá la red neuronal clasificar la señal detectada. 
+Si se detecta una señal, se crea una \textit{bounding box} alrededor de ella y se amplía el recorte correspondiente. Este recorte constituye el resultado de la detección,
+que permitirá a la red neuronal clasificar la señal detectada. 
 
 \begin{figure}[H]
     \centering
     \begin{subfigure}[b]{0.45\textwidth}
         \includegraphics[width=\textwidth]{media_CNN/bounding_box.png}
-        \caption{Bounding box alrededor de la señal.}
+        \caption{\textit{Bounding box} alrededor de la señal.}
     \end{subfigure}
     \hfill
     \begin{subfigure}[b]{0.35\textwidth}
         \includegraphics[width=\textwidth]{media_CNN/final_image.png}
         \caption{Zoom sobre la señal.}
     \end{subfigure}
-    \caption{Resultados de la detección}
+    \caption{Resultados de la detección.}
     \label{fig:fin_deteccion}
 \end{figure}
+
+En el sistema integrado (Sección~\ref{sec:integracion}), la localización de señales en tiempo real se realiza mediante la segmentación semántica de CARLA, más fiable que el pipeline basado en color en el entorno simulado. El clasificador CNN descrito a continuación se aplica en ambos casos sobre el recorte obtenido.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \subsection{Clasificación de las señales}
 % ─────────────────────────────────────────────────────────────────────────────
 
-Ahora que el vehículo es capaz de detectar la presencia o la ausencia de una señal, tiene que reconocerla para que adapte su velocidad a la situación. 
-En esta parte, se tratarán de la arquitectura CNN del modelo así como los datasets utilizados para entrenarlo y validarlo. Se analizarán los resultados
-para identificar las ventajas y los inconvenientes de este modelo. 
+Ahora que el vehículo es capaz de detectar la presencia o la ausencia de una señal, debe reconocerla para adaptar su velocidad a la situación. 
+En esta parte se presentan la arquitectura CNN del modelo, así como los \textit{datasets} utilizados para entrenarlo y validarlo. También se analizan los resultados
+para identificar las ventajas y los inconvenientes del modelo. 
 
 \subsubsection{Datasets utilizados}
 
 Se utiliza el \textit{German Traffic Sign Recognition Benchmark} (GTSRB): \url{http://benchmark.ini.rub.de/?section=gtsdb&subsection=news}
 
-Este dataset contiene varios tipos de señales, como señales de velocidad, de dirección, etc. Sin embargo, no tiene señales de 90 $km/h$, entonces se 
-lo utiliza para las señales de 30 $km/h$ y 60 $km/h$.\\
+Este \textit{dataset} contiene varios tipos de señales, como señales de velocidad o de dirección. Sin embargo, no incluye señales de 90~km/h, por lo que se 
+utiliza únicamente para las clases de 30 y 60~km/h.
 
-Para crear un dataset de entrenamiento con señales de 90 $km/h$, se crea en primer lugar un pequeño dataset con imágenes que se encontran en la red. Una vez que se tiene
-unas imágenes (alrededor de 70 imágenes), se utiliza un script Python para aplicar transformaciones en las imágenes, como rotaciones o cambios de luz. Al
-final, se obtiene 500 imágenes. 
+Para crear un \textit{dataset} de entrenamiento con señales de 90~km/h, se recopilaron en primer lugar unas 70 imágenes obtenidas de Internet. A continuación, se empleó un script en Python para aplicar transformaciones a las imágenes, como rotaciones o cambios de iluminación, hasta obtener 500 imágenes en total. 
 
-Se podrían obtener más imágenes mediante estas transformaciones, para alcanzar 1500 imágenes y tener un dataset equilibrado. No obstante, este dataset
-provocaría un overfitting sobre la clase de las señales de 90 $km/h$. En efecto, aunque hubiera más imágenes, estas se basarían en un pequeño conjunto de 
-70 imágenes. Al final, este dataset aprendería estas 70 imágenes de memoria. Por lo tanto, se eligió crear menos imágenes para conseguir mejores resultados. \\
+Se podrían generar más imágenes mediante estas transformaciones para alcanzar 1500 y equilibrar el \textit{dataset}. No obstante, ello provocaría un sobreajuste (\textit{overfitting}) en la clase de las señales de 90~km/h: aunque hubiera más imágenes, todas procederían de un conjunto reducido de 
+70 originales. El modelo acabaría memorizando esas imágenes en lugar de generalizar. Por ello, se optó por generar menos imágenes para obtener mejores resultados.
 
-En cuanto a los datasets de validación, se aplica el mismo método para obtener una parte con señales de 90 $km/h$. Pero en este caso, no se importa
-el problema anterior ya que el modelo no va a modificar sus pesos con este dataset. Entonces se obtiene al final un dataset de validación con 720 imágenes
-para cada tipo de señal. \\
+En cuanto a los \textit{datasets} de validación, se aplicó el mismo método para obtener imágenes de 90~km/h. En este caso, el problema anterior no resulta relevante, ya que el modelo no ajusta sus pesos con estos datos. Así se obtuvo un \textit{dataset} de validación con 720 imágenes
+para cada tipo de señal.
 
-Por fin, el dataset de test se compone unicamente de imágenes que provienen de la simulación, con 22 imágenes para cada tipo de señal.\\
+Por último, el \textit{dataset} de prueba se compone únicamente de imágenes procedentes de la simulación, con 22 imágenes para cada tipo de señal.
 
-El Cuadro~\ref{tab:datasets} resume el contenido de cada dataset. 
+La Tabla~\ref{tab:datasets} resume el contenido de cada conjunto de datos. 
 
-\begin{table}[h!]
+\begin{table}[H]
     \centering
     \begin{tabular}{|c|c|c|c|}
         \hline
-        \textbf{Dataset} & \textbf{Entrenamiento} & \textbf{Validación} & \textbf{Test} \\
-        \hline
+        \textbf{Señal} & \textbf{Entrenamiento} & \textbf{Validación} & \textbf{Prueba} \\
         \hline
         \raisebox{-0.25\height}{\includegraphics[width=0.9cm]{media_CNN/30.jpg}} & 1500 & 720 & 22 \\
         \hline
@@ -370,69 +367,66 @@ El Cuadro~\ref{tab:datasets} resume el contenido de cada dataset.
         \raisebox{-0.25\height}{\includegraphics[width=1.2cm]{media_CNN/90.png}} & 500 & 720 & 22 \\
         \hline
     \end{tabular}
-    \caption{Número de imágenes para cada dataset y cada señal.}
+    \caption{Número de imágenes por señal y partición del \textit{dataset}.}
     \label{tab:datasets}
 \end{table}
 
 \subsubsection{Arquitectura de la red neuronal}
 
-Se ha creado una red neuronal convolucional mediante el módulo \textit{PyTorch}. El modelo tiene que reconocer la señal en una imagen en color de 
-tamaño 96x96. Como todo modelo CNN, este modelo puede dividirse en dos partes:
+Se ha creado una red neuronal convolucional mediante el módulo \textit{PyTorch}. El modelo debe reconocer la señal en una imagen en color de 
+tamaño 96×96. Como en cualquier CNN, puede dividirse en dos partes:
 
 \begin{itemize}
-    \item La parte convolucional que se compone de cuatro capas convolucionales con un kernel 3x3 y entre cada capa una capa de MaxPooling de tamaño 2 para reducir el número de datos, y por lo tanto el número de cálculos.
-    \item La parte de clasificación que se compone de tres capas densas. Las dos primeras incluyen una capa de Dropout para reducir el overfitting, y la capa de salida tiene 3 neuronas, una para cada clase. 
+    \item La parte convolucional, compuesta por cuatro capas convolucionales con un \textit{kernel} de 3×3 y, entre cada capa, una capa de \textit{MaxPooling} de tamaño 2 para reducir el número de datos y, por tanto, el coste computacional.
+    \item La parte de clasificación, compuesta por tres capas densas. Las dos primeras incluyen una capa de \textit{Dropout} para reducir el sobreajuste, y la capa de salida dispone de 3 neuronas, una para cada clase. 
 \end{itemize}
 
-Entre ambas partes, una capa \text{Flatten} permite aplanar los datos para conseguir una entrada válida para las capas densas. \\
+Entre ambas partes, una capa \texttt{Flatten} aplana los datos para obtener una entrada válida para las capas densas.
 
-La Figura~\ref{fig:CNN} illustra la arquitectura del modelo. 
+La Figura~\ref{fig:CNN} ilustra la arquitectura del modelo. 
 
-\begin{figure}[h!]
+\begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{media_CNN/CNN.png}
-    \caption{Arquitectura del modelo CNN que se utiliza para clasificar las señales}
+    \caption{Arquitectura del modelo CNN empleado para clasificar las señales.}
     \label{fig:CNN}
 \end{figure}
 
 \subsubsection{Resultados de los entrenamientos}
 
-En la Figura~\ref{fig:entrenamiento} se muestran los resultados de un entrenamiento del modelo con 23 épocas. Se observa que las pérdidas y la eficiencia 
-se estabilizan al final del entrenamiento. Sin embargo, durante el entrenamiento, las pérdidas y la eficiencia varían de manera significativa. Estas 
-variaciones pueden explicarse por las capas de Dropout. En efecto, en nuestro modelo, estas capas desactivan las neuronas con una probabilidad de 0.3 para 
-luchar contra el overfitting. Esto obliga el modelo a encontrar diferentes maneras reconocer las características de la imagen. \\
+En la Figura~\ref{fig:entrenamiento} se muestran los resultados de un entrenamiento del modelo con 23 épocas. Se observa que las pérdidas y la precisión 
+se estabilizan al final del entrenamiento. Sin embargo, durante el proceso, ambas magnitudes varían de manera significativa. Estas 
+variaciones pueden explicarse por las capas de \textit{Dropout}: en nuestro modelo, desactivan neuronas con una probabilidad de 0.3 para 
+combatir el sobreajuste. Esto obliga al modelo a reconocer las características de la imagen de distintas maneras.
 
-\begin{figure}[h!]
+\begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{media_CNN/final_result.png}
-    \caption{Resultados de un entrenamiento con la evolución de las pérdidas a la izquierda, y de la eficiencia a la derecha}
+    \caption{Evolución de las pérdidas (izquierda) y la precisión (derecha) durante un entrenamiento de 23 épocas.}
     \label{fig:entrenamiento}
 \end{figure}
 
-\newpage
-Varios otros entrenamientos han sido efectuados con varios valores de épocas. Si el número de épocas supera 25, un overfitting aparece y los resultados
-sobre la clase de señales de 60 $km/h$ son muy bajos. Al otro lado con menos épocas, las pérdidas y la eficiencia varían demasiado como se observa en la
+Se realizaron otros entrenamientos con distintos números de épocas. Si este valor supera 25, aparece sobreajuste y los resultados
+sobre la clase de señales de 60~km/h empeoran notablemente. Por el contrario, con menos épocas, las pérdidas y la precisión fluctúan demasiado, como se observa en la
 Figura~\ref{fig:entrenamiento}. 
 
-\subsubsection{Test sobre señales de la simulación}
+\subsubsection{Prueba sobre señales de la simulación}
 
-Antes de comprobar este modelo en la simulación, se lo comproba con un dataset de Test con señales que provienen de la simulación. Este dataset se compone de 
+Antes de probar el modelo en la simulación, se evaluó con un \textit{dataset} de prueba formado por señales capturadas en el simulador. Este conjunto contiene 
 22 imágenes para cada tipo de señal. La Figura~\ref{fig:CM} muestra los resultados en forma de matriz de confusión. 
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.7\textwidth]{media_CNN/CM.png}
-    \caption{Matriz de confusión del test sobre el test del modelo}
+    \caption{Matriz de confusión del conjunto de prueba}
     \label{fig:CM}
 \end{figure}
 
-En esta matriz de confusión, se puede ver que el modelo adivina bien las señales de 30 $km/h$ y de 90 $km/h$, con porcentajes de aciertos igual a un
-86 \% y un 81 \% respectivamente. Estos porcentajes son suficientes, porque en la simulación no se tratan de imágenes aisladas, sino de un flujo video. Entonces se 
-utiliza un filtro para suavizar las predicciones. 
+En esta matriz de confusión se observa que el modelo clasifica correctamente las señales de 30 y 90~km/h, con porcentajes de acierto del
+86~\% y del 81~\%, respectivamente. Estos valores son aceptables, ya que en la simulación no se procesan imágenes aisladas, sino un flujo de vídeo; por ello se 
+aplica un filtro para suavizar las predicciones. 
 
-En cuanto a la clasificación de las señales de 60 $km/h$, los resultados son más bajos, con un porcentaje de aciertos igual a un 54 \%. Se observa que
-el modelo confunde las señales de 60 $km/h$ con las señales de 90 $km/h$. En efecto, un 6 y un 9 son muy parecidos, lo que puede complicar la clasificación
-de estas señales. 
+En cuanto a las señales de 60~km/h, los resultados son más bajos, con un 54~\% de aciertos. El modelo tiende a confundirlas con las de 90~km/h, probablemente porque los dígitos 6 y 9 son visualmente muy similares, lo que dificulta su clasificación. 
 
 % ═════════════════════════════════════════════════════════════════════════════
 \section{Integración en simulación y resultados}
@@ -455,7 +449,7 @@ El simulador se ejecuta en su versión \textit{0.9.15} dentro de un contenedor D
     \item Sensores disponibles:
     \begin{itemize}
         \item Cámara RGB frontal (\texttt{rgb\_front}): utilizada para detección de carriles y señales.
-        \item Cámara de segmentación semántica (\texttt{semantic\_segmentation\_front}): empleada para la generación automática de datasets con \textit{ground truth} perfecto.
+        \item Cámara de segmentación semántica (\texttt{semantic\_segmentation\_front}): empleada para la localización de señales en tiempo real y para la generación automática de \textit{datasets} con \textit{ground truth} perfecto.
         \item Medidor de velocidad (\texttt{speedometer}): velocidad actual del vehículo en m/s.
         \item Cámara exterior (\texttt{rgb\_view}): vista en tercera persona para supervisión visual.
     \end{itemize}
@@ -508,14 +502,15 @@ La siguiente tabla describe cada uno de los servicios del stack:
 
 \begin{table}[H]
     \centering
+    \caption{Servicios del \textit{stack} Docker Compose.}
     \label{tab:servicios_docker}
     \begin{tabular}{lll}
         \toprule
         \textbf{Servicio} & \textbf{Contenedor} & \textbf{Función} \\
         \midrule
-        \texttt{ros\_bridge}  & \texttt{carla\_ros\_bridge}             & Bridge CARLA$\to$ROS2 \\
+        \texttt{ros\_bridge}  & \texttt{carla\_ros\_bridge}             & Puente CARLA$\to$ROS2 \\
         \texttt{navegacion}   & \texttt{navegacion\_deteccion\_senales} & Lanzamiento del paquete de ROS2 \\
-        \texttt{foxglove}     & \texttt{foxglove\_bridge}               & WebSocket bridge para Foxglove Studio \\
+        \texttt{foxglove}     & \texttt{foxglove\_bridge}               & Puente WebSocket para Foxglove Studio \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -535,7 +530,7 @@ El código fuente del paquete ROS2 se monta como volumen dentro del contenedor d
 \subsection{Nodos ROS2 del sistema}
 % ─────────────────────────────────────────────────────────────────────────────
 
-El paquete \texttt{navegacion\_deteccion\_senales} implementa seis nodos ROS2 en Python que se lanzan mediante el fichero \texttt{run.launch.py}.
+El paquete \texttt{navegacion\_deteccion\_senales} implementa seis nodos ROS2 en Python. Cuatro de ellos ---detección de carriles, detección de señales, control del vehículo y generación de anotaciones--- se lanzan mediante el fichero \texttt{run.launch.py}; los dos restantes sirven para la recolección de \textit{datasets} sintéticos.
 
 \subsubsection{Nodo de detección de carriles (\texttt{lane\_detection\_node})}
 
@@ -623,7 +618,7 @@ El paquete implementa dos nodos de recolección que operan en modo conducción m
 
 \paragraph{Dataset de señales (\texttt{sign\_dataset\_node}).} Localiza los píxeles de señales (color amarillo en CARLA), extrae bounding boxes y almacena en \texttt{dataset/signs/} las imágenes RGB junto con ficheros JSON de anotaciones.
 
-Las composiciones Docker para la recolección están en \\ \texttt{tools/docker-compose-lane-dataset.yaml} y \\ \texttt{tools/docker-compose-sign-dataset.yaml}. El repositorio incluye también herramientas de visualización (\texttt{visualize\_lanes\_dataset.py}, \texttt{visualize\_signs\_dataset.py}) y scripts de anotación manual (\texttt{annotate\_signs\_dataset.py}, \texttt{label\_signs\_dataset.py}) para enriquecer el dataset sintético con etiquetas adicionales. Las animaciones del proceso de generación de datos (\texttt{Lanes\_Dataset.gif} y \texttt{Signs\_Dataset.gif}) están disponibles en el repositorio de GitHub.
+Las composiciones Docker para la recolección están en \texttt{tools/docker-compose-lane-dataset.yaml} y \texttt{tools/docker-compose-sign-dataset.yaml}. El repositorio incluye también herramientas de visualización (\texttt{visualize\_lanes\_dataset.py}, \texttt{visualize\_signs\_dataset.py}) y scripts de anotación manual (\texttt{annotate\_signs\_dataset.py}, \texttt{label\_signs\_dataset.py}) para enriquecer el \textit{dataset} sintético con etiquetas adicionales. Las animaciones del proceso de generación de datos (\texttt{Lanes\_Dataset.gif} y \texttt{Signs\_Dataset.gif}) están disponibles en el repositorio de GitHub.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \subsection{Resultados}
@@ -635,6 +630,7 @@ La siguiente tabla recoge los tiempos de procesamiento medidos durante las sesio
 
 \begin{table}[H]
     \centering
+    \caption{Latencia de inferencia medida durante la conducción autónoma.}
     \label{tab:resultados}
     \begin{tabular}{lll}
         \toprule
@@ -662,8 +658,7 @@ Las pruebas se han realizado sobre el siguiente entorno hardware y software:
 
 \subsubsection{Conducción autónoma en simulación}
 
-El sistema completo mantiene el vehículo dentro del carril de forma continuada a velocidades de hasta 30~km/h, adaptando la velocidad cuando detecta señales de límite, pero escaladas a un tercio (i.e. 90~km/h pasa a ser 30~km/h). El vídeo demostrativo del sistema funcionando en tiempo real (\texttt{media/Demo.mp4}) está disponible en el repositorio de GitHub:
-
+El sistema completo mantiene el vehículo dentro del carril de forma continua a velocidades de hasta 30~km/h, adaptando la velocidad cuando detecta señales de límite escaladas a un tercio en el simulador (es decir, una señal de 90~km/h se interpreta como 30~km/h). El vídeo demostrativo del sistema funcionando en tiempo real (\texttt{media/Demo.mp4}) está disponible en el repositorio de GitHub:
 \begin{center}
     \url{https://github.com/JoseLopez36/Navegacion-Deteccion-Senales}
 \end{center}
@@ -672,8 +667,8 @@ El sistema completo mantiene el vehículo dentro del carril de forma continuada 
 \section{Conclusiones}
 % ═════════════════════════════════════════════════════════════════════════════
 
-Este trabajo ha permitido diseñar e integrar un sistema de percepción completo para la conducción autónoma en simulación, demostrando que la combinación de modelos de \textit{deep learning} con una arquitectura ROS2 modular es una solución eficaz y reproducible. Los resultados obtenidos confirman que el sistema opera en tiempo real con latencias bajas y es capaz de mantener el vehículo dentro del carril mientras respeta los límites de velocidad detectados.
+Este trabajo ha permitido diseñar e integrar un sistema de percepción completo para la conducción autónoma en simulación. En la detección de carriles, se comprobó que un enfoque basado en líneas horizontales no ofrecía la precisión necesaria para el seguimiento del vehículo, mientras que la segmentación semántica con VGG16--U-Net entrenada sobre TuSimple proporciona máscaras fiables en tramos rectos y con curvatura suave. En la detección de señales, la CNN clasifica correctamente los límites de 30 y 90~km/h (86~\% y 81~\% de acierto en el conjunto de prueba de la simulación), aunque la clase de 60~km/h resulta más difícil (54~\%) debido a la similitud visual entre los dígitos 6 y 9.
 
-% TODO
+La integración de ambos módulos en una arquitectura ROS2 modular, desplegada en contenedores Docker sobre CARLA~0.9.15, demuestra que la combinación de modelos de \textit{deep learning} con controladores PID es una solución eficaz y reproducible. El sistema opera en tiempo real con latencias medias de unos 50~ms en carriles y 13~ms en señales, y es capaz de mantener el vehículo dentro del carril adaptando su velocidad a los límites detectados. Como líneas de mejora futura, cabría reforzar la clasificación de la señal de 60~km/h, ampliar el conjunto de clases de señales y validar el sistema en escenarios más exigentes del simulador.
 
 \end{document}
